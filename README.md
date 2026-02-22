@@ -1,8 +1,15 @@
 # rfid-door
 
-RFID-based door access control running on an **ESP32-C3** (RISC-V) in **Rust**, using a **RFIDuino Shield v1.2** for 125kHz EM4100 tag reading. Authorised tags trigger an IFTTT webhook over HTTPS/WiFi.
+RFID-based door access control system with two components:
 
-## How it works
+- **sentinel/** — ESP32-C3 firmware (Rust). Reads 125kHz RFID tags via a RFIDuino Shield v1.2 and triggers IFTTT webhooks over WiFi.
+- **panopticon/** — Web server (Rust/axum). Manages access control via a Svelte 5 frontend with U-Tec smart lock OAuth2 integration.
+
+---
+
+## Sentinel (ESP32-C3 firmware)
+
+### How it works
 
 1. The RFIDuino Shield's EM4095 chip continuously reads 125kHz RFID tags and outputs a demodulated digital signal
 2. The ESP32-C3 Manchester-decodes this signal into a 5-byte tag ID (a direct Rust port of the RFIDuino Arduino library)
@@ -193,15 +200,37 @@ The webhook payload sends the tag ID as `value1`.
 
 ```
 rfid-door/
-├── Cargo.toml              # Dependencies: esp-idf-svc, anyhow, log
-├── build.rs                # ESP-IDF build system integration
-├── sdkconfig.defaults      # ESP-IDF config (stack size, WiFi, TLS certs)
-├── .cargo/
-│   └── config.toml         # Build target, linker, runner config
-├── src/
-│   ├── main.rs             # WiFi, IFTTT webhook, main scan loop
-│   └── rfiduino.rs         # Ported RFIDuino library (Manchester decode)
-└── RFIDuino/               # Original Arduino library (reference only)
+├── sentinel/                   # ESP32-C3 firmware
+│   ├── Cargo.toml
+│   ├── build.rs
+│   ├── sdkconfig.defaults
+│   ├── .cargo/config.toml
+│   ├── src/
+│   │   ├── main.rs             # WiFi, IFTTT webhook, main scan loop
+│   │   └── rfiduino.rs         # Ported RFIDuino library (Manchester decode)
+│   └── RFIDuino/               # Original Arduino library (reference only)
+│
+├── panopticon/                 # Web server
+│   ├── Cargo.toml
+│   ├── build.rs                # Builds Svelte app and embeds into binary
+│   ├── deploy                  # Build + install + restart script
+│   ├── panopticon.service      # systemd unit file
+│   ├── Caddyfile               # Reverse proxy config for hut8.tools
+│   ├── src/
+│   │   ├── main.rs             # Axum server on :1337, static file serving
+│   │   └── oauth.rs            # U-Tec OAuth2 flow
+│   └── web/                    # Svelte 5 SPA (SvelteKit + Tailwind + Skeleton)
+│       ├── package.json
+│       ├── svelte.config.js
+│       ├── vite.config.ts
+│       └── src/
+│           ├── app.css
+│           ├── app.html
+│           └── routes/
+│               ├── +layout.svelte
+│               ├── +layout.ts
+│               └── +page.svelte
+└── README.md
 ```
 
 ## About the EM4100 protocol
@@ -223,3 +252,65 @@ The EM4100 is a 125kHz read-only RFID protocol from the 1990s. Each tag transmit
 ```
 
 40 data bits = 5 bytes: 1 manufacturer/version byte + 4 ID bytes. Row parity is even parity per row; column parity is even parity per column. This 2D parity grid provides basic error detection — elegant for a protocol designed before CRC was cheap to compute in silicon.
+
+---
+
+## Panopticon (web server)
+
+Axum web server that manages door access via a Svelte 5 SPA frontend.
+
+### Stack
+
+- **Backend:** Rust / axum on port 1337
+- **Frontend:** Svelte 5, SvelteKit, Tailwind CSS 4, Skeleton UI v4.12
+- **Deployment:** Single binary with embedded frontend assets (via `include_dir`)
+- **Reverse proxy:** Caddy (hut8.tools → localhost:1337)
+- **Process management:** systemd
+
+### U-Tec OAuth2 integration
+
+Panopticon implements OAuth2 for the U-Tec smart lock API:
+
+1. `/auth/login` → Redirects to `https://oauth.u-tec.com/authorize`
+2. U-Tec redirects back to `https://hut8.tools/auth/callback` with an authorization code
+3. `/auth/callback` → Exchanges the code for an access token via `https://oauth.u-tec.com/token`
+
+Set `CLIENT_ID` and `CLIENT_SECRET` in `panopticon/src/oauth.rs` before deploying. (These should be moved to environment variables for production.)
+
+### Development
+
+```bash
+# Terminal 1: Run the Rust backend
+cd panopticon
+cargo run
+
+# Terminal 2: Run the Vite dev server (hot-reloading frontend)
+cd panopticon/web
+npm install
+npm run dev
+```
+
+The Vite dev server (port 5173) proxies `/auth/*` requests to the Rust backend (port 1337).
+
+### Deployment
+
+```bash
+cd panopticon
+./deploy
+```
+
+This script:
+1. Builds the release binary (which also builds the Svelte app via `build.rs`)
+2. Stops the systemd service
+3. Installs the binary to `/usr/local/bin/panopticon`
+4. Installs the systemd unit file
+5. Starts the service
+
+### Caddy setup
+
+Copy the Caddyfile or add its contents to your existing Caddy config:
+
+```bash
+sudo cp panopticon/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```

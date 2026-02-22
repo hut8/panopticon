@@ -1,0 +1,3 @@
+hut8.tools {
+	reverse_proxy localhost:1337
+}
