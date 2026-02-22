@@ -1,3 +1,4 @@
+mod auth_store;
 mod oauth;
 pub mod utec;
 
@@ -9,6 +10,8 @@ use axum::{
 use include_dir::{include_dir, Dir};
 use mime_guess::from_path;
 use tracing::info;
+
+use auth_store::AuthStore;
 
 // Embed web assets into the binary at compile time
 static ASSETS: Dir<'_> = include_dir!("web/build");
@@ -22,8 +25,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    let auth_store = AuthStore::new()?;
+
     let app = Router::new()
-        .nest("/auth", oauth::router())
+        .nest("/auth", oauth::router(auth_store))
         .fallback(handle_static_file);
 
     let addr = "0.0.0.0:1337";
