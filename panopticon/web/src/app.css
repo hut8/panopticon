@@ -2,7 +2,7 @@
 
 @import '@skeletonlabs/skeleton';
 @import '@skeletonlabs/skeleton-svelte';
-@import '@skeletonlabs/skeleton/themes/skeleton';
+@import '@skeletonlabs/skeleton/themes/modern';
 
 @custom-variant dark (&:where(.dark, .dark *));
 

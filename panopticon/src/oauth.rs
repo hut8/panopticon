@@ -11,11 +11,11 @@ use std::sync::LazyLock;
 use axum::{
     extract::{Query, State},
     response::{IntoResponse, Redirect, Response},
-    routing::get,
-    Router,
+    routing::{delete, get},
+    Json, Router,
 };
 use chrono::Utc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
 use crate::auth_store::{AuthData, AuthStore};
@@ -43,6 +43,8 @@ pub fn router(auth_store: AuthStore) -> Router {
     Router::new()
         .route("/login", get(login))
         .route("/callback", get(callback))
+        .route("/status", get(status))
+        .route("/logout", delete(logout))
         .with_state(auth_store)
 }
 
@@ -151,13 +153,53 @@ async fn callback(
             .into_response();
     }
 
-    let display_name = user_name.unwrap_or_else(|| "Unknown user".to_string());
-    // TODO: Redirect to the frontend instead of returning plain text
-    (
-        axum::http::StatusCode::OK,
-        format!("Authenticated as {display_name}. Token saved."),
-    )
-        .into_response()
+    // Redirect back to the frontend
+    Redirect::temporary("/").into_response()
+}
+
+/// Auth status response for the frontend.
+#[derive(Serialize)]
+struct AuthStatus {
+    authenticated: bool,
+    user_name: Option<String>,
+    expires_at: Option<String>,
+}
+
+/// Check whether we have a valid cached token.
+async fn status(State(auth_store): State<AuthStore>) -> Json<AuthStatus> {
+    match auth_store.get().await {
+        Some(data) => {
+            let expired = data
+                .expires_at
+                .map(|exp| Utc::now() >= exp)
+                .unwrap_or(false);
+            Json(AuthStatus {
+                authenticated: !expired,
+                user_name: data.user_name,
+                expires_at: data.expires_at.map(|t| t.to_rfc3339()),
+            })
+        }
+        None => Json(AuthStatus {
+            authenticated: false,
+            user_name: None,
+            expires_at: None,
+        }),
+    }
+}
+
+/// Clear cached credentials.
+async fn logout(State(auth_store): State<AuthStore>) -> Response {
+    match auth_store.clear().await {
+        Ok(_) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Err(e) => {
+            error!("Failed to clear auth: {e}");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to logout: {e}"),
+            )
+                .into_response()
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
