@@ -6,6 +6,8 @@
 //! 3. We exchange the code for an access token via U-Tec's token endpoint
 //! 4. Token is persisted to auth.json and a UTec client is created
 
+use std::sync::LazyLock;
+
 use axum::{
     extract::{Query, State},
     response::{IntoResponse, Redirect, Response},
@@ -26,10 +28,16 @@ const TOKEN_URI: &str = "https://oauth.u-tec.com/token";
 /// Callback host
 const REDIRECT_HOST: &str = "https://hut8.tools";
 
-// TODO: Move these to environment variables before deployment
-const CLIENT_ID: &str = "YOUR_CLIENT_ID";
-const CLIENT_SECRET: &str = "YOUR_CLIENT_SECRET";
-const SCOPE: &str = "openapi";
+/// OAuth2 credentials loaded from environment variables.
+/// Required: UTEC_CLIENT_ID, UTEC_CLIENT_SECRET
+/// Optional: UTEC_SCOPE (defaults to "openapi")
+static CLIENT_ID: LazyLock<String> =
+    LazyLock::new(|| std::env::var("UTEC_CLIENT_ID").expect("UTEC_CLIENT_ID must be set"));
+static CLIENT_SECRET: LazyLock<String> = LazyLock::new(|| {
+    std::env::var("UTEC_CLIENT_SECRET").expect("UTEC_CLIENT_SECRET must be set")
+});
+static SCOPE: LazyLock<String> =
+    LazyLock::new(|| std::env::var("UTEC_SCOPE").unwrap_or_else(|_| "openapi".to_string()));
 
 pub fn router(auth_store: AuthStore) -> Router {
     Router::new()
@@ -46,9 +54,9 @@ async fn login() -> Response {
     let authorize_url = format!(
         "{}?response_type=code&client_id={}&client_secret={}&scope={}&redirect_uri={}&state={}",
         AUTHORIZE_URI,
-        CLIENT_ID,
-        CLIENT_SECRET,
-        SCOPE,
+        &*CLIENT_ID,
+        &*CLIENT_SECRET,
+        &*SCOPE,
         urlencoding::encode(&redirect_uri),
         urlencoding::encode(&state),
     );
@@ -165,7 +173,7 @@ struct TokenResponse {
 async fn exchange_code(code: &str) -> anyhow::Result<TokenResponse> {
     let url = format!(
         "{}?grant_type=authorization_code&client_id={}&code={}",
-        TOKEN_URI, CLIENT_ID, code,
+        TOKEN_URI, &*CLIENT_ID, code,
     );
 
     let client = reqwest::Client::new();

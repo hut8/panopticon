@@ -19,6 +19,26 @@ else
     echo "    User ${SERVICE_USER} already exists"
 fi
 
+ENV_DIR="/etc/${SERVICE_NAME}"
+ENV_FILE="${ENV_DIR}/env"
+
+echo "==> Setting up credentials directory..."
+sudo mkdir -p "${ENV_DIR}"
+if [ ! -f "${ENV_FILE}" ]; then
+    echo "    Creating ${ENV_FILE} with placeholder credentials..."
+    sudo tee "${ENV_FILE}" > /dev/null <<'ENVEOF'
+UTEC_CLIENT_ID=978782844363a4ccb4d5bcc2cd24d613
+UTEC_CLIENT_SECRET=2c44a8f01d13a2b8b01c13b6cf4aa1da
+UTEC_SCOPE=openapi
+ENVEOF
+    echo "    *** Review ${ENV_FILE} and update if needed ***"
+else
+    echo "    ${ENV_FILE} already exists, not overwriting"
+fi
+# Only root and the service user should read the credentials
+sudo chown root:${SERVICE_USER} "${ENV_FILE}"
+sudo chmod 640 "${ENV_FILE}"
+
 echo "==> Stopping ${SERVICE_NAME} service..."
 sudo systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
 
