@@ -4,7 +4,6 @@ use axum::{
     Router,
     http::{HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
-    routing::get,
 };
 use include_dir::{Dir, include_dir};
 use mime_guess::from_path;
