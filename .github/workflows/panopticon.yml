@@ -1,0 +1,45 @@
+name: Panopticon
+
+on:
+  push:
+    paths:
+      - "panopticon/**"
+      - ".github/workflows/panopticon.yml"
+  pull_request:
+    paths:
+      - "panopticon/**"
+      - ".github/workflows/panopticon.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+  SKIP_WEB_BUILD: "1"
+
+jobs:
+  check:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: panopticon
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: panopticon
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Build
+        run: cargo build
+
+      - name: Test
+        run: cargo test

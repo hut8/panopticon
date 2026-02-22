@@ -19,7 +19,7 @@
 //! | `Uhome.Device` | `Command` | Send a command to devices |
 
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::{debug, error};
 use uuid::Uuid;
 
@@ -274,12 +274,7 @@ impl UTec {
     }
 
     /// Send a request to the U-Tec API and deserialize the response payload.
-    async fn request<Req, Resp>(
-        &self,
-        namespace: &str,
-        name: &str,
-        payload: Req,
-    ) -> Result<Resp>
+    async fn request<Req, Resp>(&self, namespace: &str, name: &str, payload: Req) -> Result<Resp>
     where
         Req: Serialize,
         Resp: DeserializeOwned,
@@ -341,11 +336,7 @@ impl UTec {
     ///
     /// The `notification_token` is sent back by U-Tec with each notification
     /// for authentication. Update it periodically for security.
-    pub async fn set_notification_url(
-        &self,
-        url: &str,
-        notification_token: &str,
-    ) -> Result<()> {
+    pub async fn set_notification_url(&self, url: &str, notification_token: &str) -> Result<()> {
         let payload = ConfigurePayload {
             configure: ConfigureNotification {
                 notification: NotificationConfig {
@@ -355,9 +346,7 @@ impl UTec {
             },
         };
 
-        let _: serde_json::Value = self
-            .request("Uhome.Configure", "Set", payload)
-            .await?;
+        let _: serde_json::Value = self.request("Uhome.Configure", "Set", payload).await?;
         Ok(())
     }
 
@@ -365,9 +354,7 @@ impl UTec {
 
     /// Get the authenticated user's info.
     pub async fn get_user(&self) -> Result<User> {
-        let payload: UserPayload = self
-            .request("Uhome.User", "Get", EmptyPayload {})
-            .await?;
+        let payload: UserPayload = self.request("Uhome.User", "Get", EmptyPayload {}).await?;
         Ok(payload.user)
     }
 

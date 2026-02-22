@@ -2,11 +2,11 @@ mod oauth;
 pub mod utec;
 
 use axum::{
-    Router,
     http::{HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
+    Router,
 };
-use include_dir::{Dir, include_dir};
+use include_dir::{include_dir, Dir};
 use mime_guess::from_path;
 use tracing::info;
 
