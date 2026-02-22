@@ -5,6 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=panopticon
+Group=panopticon
+StateDirectory=panopticon
 ExecStart=/usr/local/bin/panopticon
 Environment=RUST_LOG=panopticon=info
 Restart=on-failure
