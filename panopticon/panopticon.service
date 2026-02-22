@@ -1,0 +1,14 @@
+[Unit]
+Description=Panopticon - RFID Door Access Web Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/panopticon
+Environment=RUST_LOG=panopticon=info
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

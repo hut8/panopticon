@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton-svelte';
+@import '@skeletonlabs/skeleton/themes/skeleton';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html,
+body {
+	height: 100%;
+}

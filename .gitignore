@@ -1,5 +1,17 @@
-/target
-/.embuild
-/sdkconfig
-/sdkconfig.old
+# Rust build artifacts
+target/
+
+# ESP-IDF build artifacts (sentinel)
+.embuild/
+sdkconfig
+sdkconfig.old
+
+# Node.js (panopticon/web)
+node_modules/
+
+# SvelteKit build output (embedded by build.rs)
+panopticon/web/build/
+panopticon/web/.svelte-kit/
+
+# Claude
 .claude/
