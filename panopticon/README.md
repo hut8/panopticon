@@ -21,31 +21,15 @@ Authorization: Bearer <ACCESS_TOKEN>
 Content-Type: application/json
 ```
 
-### Request format
+### Envelope format
+
+Every request and response uses the same envelope. `messageId` is a UUID v4 echoed back in the response.
 
 ```json
 {
     "header": {
         "namespace": "Uhome.Device",
-        "name": "Lock",
-        "messageId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
-        "payloadVersion": "1"
-    },
-    "payload": {
-        "deviceId": "..."
-    }
-}
-```
-
-`messageId` is a UUID v4. The response echoes it back.
-
-### Response format
-
-```json
-{
-    "header": {
-        "namespace": "Uhome.Device",
-        "name": "Lock",
+        "name": "Discovery",
         "messageId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
         "payloadVersion": "1"
     },
@@ -53,13 +37,10 @@ Content-Type: application/json
 }
 ```
 
-### Error format
-
-Errors are returned inside `payload.error` (not as HTTP error codes):
+Errors are returned inside a 200 OK response in `payload.error`:
 
 ```json
 {
-    "header": { ... },
     "payload": {
         "error": {
             "code": "INVALID_TOKEN",
@@ -77,25 +58,61 @@ Errors are returned inside `payload.error` (not as HTTP error codes):
 | **Callback** | `https://hut8.tools/auth/callback?authorization_code={CODE}&state={STATE}` |
 | **Token** | `POST https://oauth.u-tec.com/token?grant_type=authorization_code&client_id={ID}&code={CODE}` |
 
-### Implemented actions
+### Actions
 
 | Namespace | Name | Description | Rust method |
 |-----------|------|-------------|-------------|
-| `Uhome.User` | `Get` | Get authenticated user info | `utec.get_user()` |
-| `Uhome.Device` | `List` | List all locks | `utec.list_locks()` |
-| `Uhome.Device` | `GetLockStatus` | Get lock/unlock state | `utec.get_lock_status(id)` |
-| `Uhome.Device` | `Lock` | Lock a device | `utec.lock(id)` |
-| `Uhome.Device` | `Unlock` | Unlock a device | `utec.unlock(id)` |
+| `Uhome.Configure` | `Set` | Register notification webhook URL | `utec.set_notification_url(url, token)` |
+| `Uhome.User` | `Get` | Get current user info | `utec.get_user()` |
+| `Uhome.User` | `Logout` | Invalidate access token | `utec.logout()` |
+| `Uhome.Device` | `Discovery` | List all devices with capabilities | `utec.discover_devices()` |
+| `Uhome.Device` | `Query` | Query real-time device states | `utec.query_devices(&[device])` |
+| `Uhome.Device` | `Command` | Send command to a device | `utec.send_command(device, cmd)` |
+
+### Device state model
+
+Devices report state via capability-based key-value entries:
+
+| Capability | Name | Value | Description |
+|------------|------|-------|-------------|
+| `st.healthCheck` | `status` | `"online"` / `"offline"` | Device connectivity |
+| `st.Lock` | `lockState` | `"locked"` / `"unlocked"` | Lock state |
+| `st.BatteryLevel` | `level` | `0`-`100` | Battery percentage |
+| `st.deferredResponse` | `seconds` | `10` | Command is async, wait N seconds |
+
+### Device discovery
+
+Discovery returns devices with `category` (e.g., `"LOCK"`, `"LIGHT"`), `handleType` (e.g., `"utec-lock"`), `deviceInfo` (manufacturer, model, firmware), and `customData` that must be echoed back in Query/Command requests.
 
 ### Usage (Rust)
 
 ```rust
-use panopticon::utec::UTec;
+use panopticon::utec::{UTec, CommandSpec};
 
 let client = UTec::new(access_token);
+
+// Get user info
 let user = client.get_user().await?;
-let locks = client.list_locks().await?;
-client.unlock(&locks[0].id).await?;
+
+// Discover all locks
+let locks = client.discover_locks().await?;
+let lock = &locks[0];
+
+// Query lock state
+let state = client.query_device(lock).await?;
+println!("Lock state: {:?}", state.lock_state());     // "locked" / "unlocked"
+println!("Battery: {:?}", state.battery_level());       // Some(85)
+println!("Online: {}", state.is_online());              // true
+
+// Unlock
+client.unlock(lock).await?;
+
+// Send arbitrary command
+client.send_command(lock, CommandSpec {
+    capability: "st.Lock".to_string(),
+    name: "lock".to_string(),
+    arguments: None,
+}).await?;
 ```
 
 ## Development
