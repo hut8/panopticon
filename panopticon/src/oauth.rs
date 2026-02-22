@@ -7,10 +7,10 @@
 //! 4. Token is stored and a UTec client is created for API calls
 
 use axum::{
-    Router,
     extract::Query,
     response::{IntoResponse, Redirect, Response},
     routing::get,
+    Router,
 };
 use serde::Deserialize;
 use tracing::{error, info};
@@ -112,10 +112,7 @@ async fn callback(Query(params): Query<CallbackParams>) -> Response {
             // TODO: Store token in session/cookie for subsequent requests
             (
                 axum::http::StatusCode::OK,
-                format!(
-                    "Authenticated as {} {}",
-                    user.first_name, user.last_name
-                ),
+                format!("Authenticated as {} {}", user.first_name, user.last_name),
             )
                 .into_response()
         }
