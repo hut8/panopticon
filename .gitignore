@@ -13,5 +13,9 @@ node_modules/
 panopticon/web/build/
 panopticon/web/.svelte-kit/
 
+# Environment files (secrets)
+.env
+panopticon/.env
+
 # Claude
 .claude/
