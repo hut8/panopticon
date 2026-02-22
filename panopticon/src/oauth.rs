@@ -4,7 +4,7 @@
 //! 1. User visits /auth/login → redirected to U-Tec authorization endpoint
 //! 2. U-Tec redirects back to /auth/callback with authorization_code + state
 //! 3. We exchange the code for an access token via U-Tec's token endpoint
-//! 4. Token is stored for subsequent API calls
+//! 4. Token is stored and a UTec client is created for API calls
 
 use axum::{
     Router,
@@ -14,6 +14,8 @@ use axum::{
 };
 use serde::Deserialize;
 use tracing::{error, info};
+
+use crate::utec::UTec;
 
 /// U-Tec OAuth2 endpoints
 const AUTHORIZE_URI: &str = "https://oauth.u-tec.com/authorize";
@@ -35,9 +37,7 @@ pub fn router() -> Router {
 
 /// Redirect the user to U-Tec's OAuth2 authorization page.
 async fn login() -> Response {
-    // Generate a random state parameter for CSRF protection
     let state = generate_state();
-
     let redirect_uri = format!("{}/auth/callback", REDIRECT_HOST);
 
     let authorize_url = format!(
@@ -64,7 +64,7 @@ struct CallbackParams {
 /// Handle the OAuth2 callback from U-Tec.
 ///
 /// U-Tec redirects here with `authorization_code` and `state` parameters.
-/// We exchange the code for an access token.
+/// We exchange the code for an access token, then verify by fetching user info.
 async fn callback(Query(params): Query<CallbackParams>) -> Response {
     // U-Tec uses `authorization_code` as the parameter name per their docs,
     // but fall back to standard `code` just in case
@@ -86,22 +86,44 @@ async fn callback(Query(params): Query<CallbackParams>) -> Response {
     }
 
     // Exchange authorization code for access token
-    match exchange_code(&code).await {
-        Ok(token_response) => {
-            info!("Successfully obtained access token");
-            // TODO: Store the token (in-memory, database, or cookie session)
-            // For now, just confirm success
+    let token_response = match exchange_code(&code).await {
+        Ok(t) => t,
+        Err(e) => {
+            error!("Failed to exchange authorization code: {e}");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Token exchange failed: {e}"),
+            )
+                .into_response();
+        }
+    };
+
+    info!("Successfully obtained access token");
+
+    // Verify the token works by fetching user info
+    let client = UTec::new(token_response.access_token);
+    match client.get_user().await {
+        Ok(user) => {
+            info!(
+                user_id = %user.id,
+                name = %format!("{} {}", user.first_name, user.last_name),
+                "Authenticated U-Tec user"
+            );
+            // TODO: Store token in session/cookie for subsequent requests
             (
                 axum::http::StatusCode::OK,
-                format!("Authentication successful. Token type: {}", token_response.token_type),
+                format!(
+                    "Authenticated as {} {}",
+                    user.first_name, user.last_name
+                ),
             )
                 .into_response()
         }
         Err(e) => {
-            error!("Failed to exchange authorization code: {e}");
+            error!("Token valid but failed to fetch user info: {e}");
             (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Token exchange failed: {e}"),
+                axum::http::StatusCode::OK,
+                "Authentication successful (could not fetch user info)".to_string(),
             )
                 .into_response()
         }
@@ -111,8 +133,11 @@ async fn callback(Query(params): Query<CallbackParams>) -> Response {
 #[derive(Deserialize, Debug)]
 struct TokenResponse {
     access_token: String,
+    #[allow(dead_code)]
     token_type: String,
+    #[allow(dead_code)]
     expires_in: Option<u64>,
+    #[allow(dead_code)]
     refresh_token: Option<String>,
 }
 

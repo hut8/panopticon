@@ -1,4 +1,5 @@
 mod oauth;
+pub mod utec;
 
 use axum::{
     Router,
