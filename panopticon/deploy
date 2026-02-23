@@ -46,6 +46,20 @@ echo "==> Installing binary to ${BINARY_PATH}..."
 sudo cp "${SCRIPT_DIR}/target/release/${SERVICE_NAME}" "${BINARY_PATH}"
 sudo chmod 755 "${BINARY_PATH}"
 
+CADDY_CONF="/etc/caddy/Caddyfile"
+CADDY_INCLUDE="/etc/caddy/Caddyfile.panopticon"
+IMPORT_LINE="import /etc/caddy/Caddyfile.panopticon"
+
+echo "==> Installing Caddyfile..."
+sudo cp "${SCRIPT_DIR}/Caddyfile" "${CADDY_INCLUDE}"
+if ! grep -qF "${IMPORT_LINE}" "${CADDY_CONF}"; then
+    echo "${IMPORT_LINE}" | sudo tee -a "${CADDY_CONF}" > /dev/null
+    echo "    Added import directive to ${CADDY_CONF}"
+else
+    echo "    Import directive already present in ${CADDY_CONF}"
+fi
+sudo systemctl reload caddy
+
 echo "==> Installing systemd service..."
 sudo cp "${SERVICE_FILE}" "/etc/systemd/system/${SERVICE_NAME}.service"
 sudo systemctl daemon-reload
