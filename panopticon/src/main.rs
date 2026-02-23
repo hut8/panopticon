@@ -24,6 +24,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
 
     tracing_subscriber::fmt()
+        .without_time()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "panopticon=info,tower_http=info".into()),
