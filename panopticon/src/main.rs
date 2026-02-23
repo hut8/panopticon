@@ -9,7 +9,8 @@ use axum::{
 };
 use include_dir::{include_dir, Dir};
 use mime_guess::from_path;
-use tracing::info;
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
+use tracing::{info, Level};
 
 use auth_store::AuthStore;
 
@@ -33,7 +34,26 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .nest("/auth", oauth::router(auth_store))
-        .fallback(handle_static_file);
+        .fallback(handle_static_file)
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    let client_ip = request
+                        .headers()
+                        .get("x-forwarded-for")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.split(',').next())
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_else(|| "-".into());
+                    tracing::info_span!(
+                        "request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        client_ip = %client_ip,
+                    )
+                })
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        );
 
     let addr = "0.0.0.0:1337";
     info!("Panopticon listening on {addr}");
