@@ -1,3 +1,6 @@
 hut8.tools {
+	log {
+		output file /var/log/caddy/hut8.tools.log
+	}
 	reverse_proxy localhost:1337
 }
