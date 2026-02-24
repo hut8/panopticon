@@ -5,8 +5,20 @@
 		expires_at: string | null;
 	}
 
+	interface DeviceInfo {
+		id: string;
+		name: string;
+		lock_state: string | null;
+		battery_level: number | null;
+		online: boolean;
+	}
+
 	let utecStatus: UtecStatus | null = $state(null);
+	let devices: DeviceInfo[] = $state([]);
 	let loading = $state(true);
+	let devicesLoading = $state(false);
+	let actionInFlight: Record<string, boolean> = $state({});
+	let error: string | null = $state(null);
 
 	async function checkUtec() {
 		try {
@@ -19,10 +31,46 @@
 		}
 	}
 
+	async function loadDevices() {
+		devicesLoading = true;
+		error = null;
+		try {
+			const res = await fetch('/api/devices');
+			if (res.status === 503) {
+				devices = [];
+				return;
+			}
+			if (!res.ok) throw new Error('Failed to load devices');
+			devices = await res.json();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load devices';
+		} finally {
+			devicesLoading = false;
+		}
+	}
+
+	async function toggleLock(device: DeviceInfo) {
+		const action = device.lock_state === 'locked' ? 'unlock' : 'lock';
+		actionInFlight = { ...actionInFlight, [device.id]: true };
+		try {
+			const res = await fetch(`/api/devices/${device.id}/${action}`, { method: 'POST' });
+			if (!res.ok) throw new Error(`Failed to ${action}`);
+			const result = await res.json();
+			devices = devices.map((d) =>
+				d.id === device.id ? { ...d, lock_state: result.lock_state } : d
+			);
+		} catch (e) {
+			error = e instanceof Error ? e.message : `Failed to ${action}`;
+		} finally {
+			actionInFlight = { ...actionInFlight, [device.id]: false };
+		}
+	}
+
 	async function disconnectUtec() {
 		try {
 			await fetch('/auth/logout', { method: 'DELETE' });
 			utecStatus = { authenticated: false, user_name: null, expires_at: null };
+			devices = [];
 		} catch {
 			// ignore
 		}
@@ -36,6 +84,12 @@
 	$effect(() => {
 		checkUtec();
 	});
+
+	$effect(() => {
+		if (utecStatus?.authenticated) {
+			loadDevices();
+		}
+	});
 </script>
 
 <svelte:head>
@@ -43,45 +97,193 @@
 </svelte:head>
 
 <main class="flex flex-1 items-center justify-center p-6">
-	<div class="w-full max-w-sm space-y-6">
+	<div class="w-full max-w-md space-y-6">
 		<div class="flex items-center justify-between">
 			<h1 class="h2">Panopticon</h1>
-			<button class="text-sm text-surface-500 hover:text-surface-300 cursor-pointer" onclick={handleLogout}>
+			<button
+				class="text-sm text-surface-500 hover:text-surface-300 cursor-pointer"
+				onclick={handleLogout}
+			>
 				Sign out
 			</button>
 		</div>
 
-		<div class="card preset-filled-surface-900 space-y-5 p-6">
-			<h2 class="h5">U-Tec Smart Lock</h2>
-
-			{#if loading}
+		{#if loading}
+			<div class="card preset-filled-surface-900 p-6">
 				<p class="text-sm text-surface-400 animate-pulse">Checking connection...</p>
-			{:else if utecStatus?.authenticated}
-				<div class="space-y-3">
-					<div class="flex items-center gap-3 rounded-md bg-success-500/10 px-4 py-3">
-						<div class="h-2 w-2 rounded-full bg-success-500"></div>
-						<div>
-							<p class="text-sm font-medium text-surface-200">Connected</p>
-							<p class="text-xs text-surface-400">{utecStatus.user_name ?? 'Unknown user'}</p>
-						</div>
-					</div>
-					{#if utecStatus.expires_at}
-						<p class="text-xs text-surface-500">
-							Token expires {new Date(utecStatus.expires_at).toLocaleString()}
-						</p>
-					{/if}
-					<button class="btn btn-base preset-outlined-surface-500 w-full" onclick={disconnectUtec}>
-						Disconnect
-					</button>
-				</div>
-			{:else}
+			</div>
+		{:else if !utecStatus?.authenticated}
+			<div class="card preset-filled-surface-900 space-y-5 p-6">
+				<h2 class="h5">U-Tec Smart Lock</h2>
 				<p class="text-sm text-surface-400">
 					Connect your U-Tec account to manage your smart locks.
 				</p>
 				<a href="/auth/login" class="btn btn-base preset-filled-primary-500 w-full">
 					Connect U-Tec Account
 				</a>
+			</div>
+		{:else}
+			<!-- Connected header -->
+			<div class="card preset-filled-surface-900 space-y-4 p-6">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<div class="h-2 w-2 rounded-full bg-success-500"></div>
+						<div>
+							<p class="text-sm font-medium text-surface-200">U-Tec Connected</p>
+							<p class="text-xs text-surface-400">
+								{utecStatus.user_name ?? 'Unknown user'}
+							</p>
+						</div>
+					</div>
+					<button
+						class="text-xs text-surface-500 hover:text-surface-300 cursor-pointer"
+						onclick={disconnectUtec}
+					>
+						Disconnect
+					</button>
+				</div>
+			</div>
+
+			<!-- Devices -->
+			{#if devicesLoading}
+				<div class="card preset-filled-surface-900 p-6">
+					<p class="text-sm text-surface-400 animate-pulse">Loading locks...</p>
+				</div>
+			{:else if error}
+				<div class="card preset-filled-surface-900 space-y-3 p-6">
+					<p class="text-sm text-error-400">{error}</p>
+					<button class="btn btn-sm preset-outlined-surface-500" onclick={loadDevices}>
+						Retry
+					</button>
+				</div>
+			{:else if devices.length === 0}
+				<div class="card preset-filled-surface-900 p-6">
+					<p class="text-sm text-surface-400">No locks found on your account.</p>
+				</div>
+			{:else}
+				{#each devices as device (device.id)}
+					<div class="card preset-filled-surface-900 space-y-4 p-6">
+						<div class="flex items-center justify-between">
+							<h3 class="text-base font-medium text-surface-100">{device.name}</h3>
+							<div class="flex items-center gap-2">
+								{#if !device.online}
+									<span class="text-xs text-surface-500">Offline</span>
+								{/if}
+								<div
+									class="h-2 w-2 rounded-full {device.online
+										? 'bg-success-500'
+										: 'bg-surface-600'}"
+								></div>
+							</div>
+						</div>
+
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-3">
+								<!-- Lock state indicator -->
+								{#if device.lock_state === 'locked'}
+									<div
+										class="flex h-10 w-10 items-center justify-center rounded-full bg-success-500/15"
+									>
+										<svg
+											class="h-5 w-5 text-success-500"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+											/>
+										</svg>
+									</div>
+									<span class="text-sm font-medium text-success-400">Locked</span>
+								{:else if device.lock_state === 'unlocked'}
+									<div
+										class="flex h-10 w-10 items-center justify-center rounded-full bg-warning-500/15"
+									>
+										<svg
+											class="h-5 w-5 text-warning-500"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"
+											/>
+										</svg>
+									</div>
+									<span class="text-sm font-medium text-warning-400">Unlocked</span>
+								{:else}
+									<div
+										class="flex h-10 w-10 items-center justify-center rounded-full bg-surface-700"
+									>
+										<svg
+											class="h-5 w-5 text-surface-400"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+											/>
+										</svg>
+									</div>
+									<span class="text-sm text-surface-400">Unknown</span>
+								{/if}
+							</div>
+
+							<!-- Battery -->
+							{#if device.battery_level != null}
+								<div class="flex items-center gap-1 text-xs text-surface-400">
+									<svg
+										class="h-4 w-4"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M3 7h14a2 2 0 012 2v6a2 2 0 01-2 2H3a2 2 0 01-2-2V9a2 2 0 012-2zm18 3v4"
+										/>
+									</svg>
+									{device.battery_level}%
+								</div>
+							{/if}
+						</div>
+
+						<!-- Lock/Unlock button -->
+						<button
+							class="btn btn-base w-full {device.lock_state === 'locked'
+								? 'preset-outlined-warning-500'
+								: 'preset-outlined-success-500'}"
+							disabled={actionInFlight[device.id] || !device.online}
+							onclick={() => toggleLock(device)}
+						>
+							{#if actionInFlight[device.id]}
+								<span class="animate-pulse">
+									{device.lock_state === 'locked' ? 'Unlocking...' : 'Locking...'}
+								</span>
+							{:else if !device.online}
+								Offline
+							{:else if device.lock_state === 'locked'}
+								Unlock
+							{:else}
+								Lock
+							{/if}
+						</button>
+					</div>
+				{/each}
 			{/if}
-		</div>
+		{/if}
 	</div>
 </main>
