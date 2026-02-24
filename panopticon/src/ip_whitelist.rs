@@ -14,8 +14,7 @@ use crate::auth_store::resolve_auth_path;
 
 /// Load the IP whitelist from `ip_whitelist.txt` in the same directory as `auth.json`.
 pub fn load_whitelist() -> anyhow::Result<Arc<Vec<IpNet>>> {
-    let path = resolve_auth_path()
-        .with_file_name("ip-whitelist.txt");
+    let path = resolve_auth_path().with_file_name("ip-whitelist.txt");
 
     let contents = std::fs::read_to_string(&path)
         .map_err(|e| anyhow::anyhow!("Failed to read {}: {e}", path.display()))?;
@@ -49,11 +48,7 @@ pub fn load_whitelist() -> anyhow::Result<Arc<Vec<IpNet>>> {
 }
 
 /// Middleware that rejects requests from IPs not in the whitelist.
-pub async fn check(
-    whitelist: Arc<Vec<IpNet>>,
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn check(whitelist: Arc<Vec<IpNet>>, req: Request, next: Next) -> Response {
     let client_ip = req
         .headers()
         .get("x-forwarded-for")
