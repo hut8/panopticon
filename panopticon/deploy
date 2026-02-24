@@ -30,6 +30,12 @@ if [ ! -f "${ENV_FILE}" ]; then
 UTEC_CLIENT_ID=changeme
 UTEC_CLIENT_SECRET=changeme
 UTEC_SCOPE=openapi
+DATABASE_URL=postgres:///panopticon
+SMTP_USERNAME=changeme
+SMTP_PASSWORD=changeme
+SMTP_HOST=smtp.mailgun.org
+SMTP_FROM=changeme@example.com
+BASE_URL=https://example.com
 ENVEOF
     echo "    *** Review ${ENV_FILE} and update if needed ***"
 else
