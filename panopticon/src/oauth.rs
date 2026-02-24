@@ -213,25 +213,47 @@ struct TokenResponse {
 
 /// Exchange an authorization code for an access token.
 async fn exchange_code(code: &str) -> anyhow::Result<TokenResponse> {
-    let url = format!(
-        "{}?grant_type=authorization_code&client_id={}&code={}",
-        TOKEN_URI, &*CLIENT_ID, code,
+    let redirect_uri = format!("{}/auth/callback", REDIRECT_HOST);
+
+    let params = [
+        ("grant_type", "authorization_code"),
+        ("client_id", &CLIENT_ID),
+        ("client_secret", &CLIENT_SECRET),
+        ("code", code),
+        ("redirect_uri", &redirect_uri),
+    ];
+
+    tracing::info!(
+        "Exchanging code at {} with client_id={}, redirect_uri={}, code={}...{}",
+        TOKEN_URI, &*CLIENT_ID, &redirect_uri,
+        &code[..4.min(code.len())], &code[code.len().saturating_sub(4)..],
     );
 
     let client = reqwest::Client::new();
     let response = client
-        .post(&url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
+        .post(TOKEN_URI)
+        .form(&params)
         .send()
         .await?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+    let status = response.status();
+    let headers = format!("{:?}", response.headers());
+    let body = response.text().await.unwrap_or_default();
+    tracing::info!("Token endpoint returned {status}\nHeaders: {headers}\nBody: {body}");
+
+    if !status.is_success() {
         anyhow::bail!("Token endpoint returned {status}: {body}");
     }
 
-    let token: TokenResponse = response.json().await?;
+    // U-Tec returns 200 even for errors, so check for error field first
+    if let Ok(err) = serde_json::from_str::<serde_json::Value>(&body) {
+        if let Some(error) = err.get("error").and_then(|e| e.as_str()) {
+            let desc = err.get("error_description").and_then(|d| d.as_str()).unwrap_or("");
+            anyhow::bail!("Token endpoint error: {error}: {desc}");
+        }
+    }
+
+    let token: TokenResponse = serde_json::from_str(&body)?;
     Ok(token)
 }
 
