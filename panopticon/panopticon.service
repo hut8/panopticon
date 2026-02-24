@@ -10,7 +10,7 @@ User=panopticon
 Group=panopticon
 StateDirectory=panopticon
 ExecStart=/usr/local/bin/panopticon
-Environment=RUST_LOG=panopticon=info,tower_http=info
+Environment=RUST_LOG=panopticon=debug,tower_http=info
 EnvironmentFile=/etc/panopticon/env
 Restart=on-failure
 RestartSec=5

@@ -121,7 +121,7 @@ pub struct Device {
 
 impl Device {
     pub fn is_lock(&self) -> bool {
-        self.category.as_deref() == Some("LOCK")
+        matches!(self.category.as_deref(), Some("LOCK" | "SmartLock"))
     }
 }
 
@@ -157,23 +157,25 @@ impl DeviceWithStates {
             .find(|s| s.capability == capability && s.name == name)
     }
 
-    /// Check if the device is online (has `st.healthCheck/status == "online"`).
+    /// Check if the device is online (has `st.healthCheck/status == "Online"`).
     pub fn is_online(&self) -> bool {
         self.get_state("st.healthCheck", "status")
             .and_then(|s| s.value.as_str())
-            == Some("online")
+            .map(|s| s.eq_ignore_ascii_case("online"))
+            .unwrap_or(false)
     }
 
     /// Get the lock state if this is a lock device.
-    /// Returns "locked" or "unlocked".
-    pub fn lock_state(&self) -> Option<&str> {
-        self.get_state("st.Lock", "lockState")
+    /// Returns "locked" or "unlocked" (normalized to lowercase).
+    pub fn lock_state(&self) -> Option<String> {
+        self.get_state("st.lock", "lockState")
             .and_then(|s| s.value.as_str())
+            .map(|s| s.to_lowercase())
     }
 
     /// Get the battery level if available.
     pub fn battery_level(&self) -> Option<u64> {
-        self.get_state("st.BatteryLevel", "level")
+        self.get_state("st.batteryLevel", "level")
             .and_then(|s| s.value.as_u64())
     }
 }
@@ -288,7 +290,8 @@ impl UTec {
             payload,
         };
 
-        debug!(namespace, name, message_id, "U-Tec API request");
+        let request_json = serde_json::to_string(&body).context("Failed to serialize request")?;
+        debug!(namespace, name, message_id, body = %request_json, "U-Tec API request");
 
         let response = self
             .http
@@ -305,6 +308,8 @@ impl UTec {
             .await
             .context("Failed to read U-Tec API response")?;
 
+        debug!(%status, body = %response_text, "U-Tec API response");
+
         if !status.is_success() {
             error!(%status, body = %response_text, "U-Tec API HTTP error");
             bail!("U-Tec API returned HTTP {status}: {response_text}");
@@ -314,7 +319,7 @@ impl UTec {
         // inside 200 OK responses in payload.error
         if let Ok(err_resp) = serde_json::from_str::<ApiResponse<ErrorPayload>>(&response_text) {
             if let Some(api_err) = err_resp.payload.error {
-                error!(code = %api_err.code, message = %api_err.message, "U-Tec API error");
+                error!(code = %api_err.code, message = %api_err.message, body = %response_text, "U-Tec API error");
                 return Err(api_err.into());
             }
         }
@@ -435,12 +440,12 @@ impl UTec {
         results.pop().context("No device state returned")
     }
 
-    /// Lock a device by sending the `st.Lock/lock` command.
+    /// Lock a device by sending the `st.lock/lock` command.
     pub async fn lock(&self, device: &Device) -> Result<Vec<DeviceWithStates>> {
         self.send_command(
             device,
             CommandSpec {
-                capability: "st.Lock".to_string(),
+                capability: "st.lock".to_string(),
                 name: "lock".to_string(),
                 arguments: None,
             },
@@ -448,12 +453,12 @@ impl UTec {
         .await
     }
 
-    /// Unlock a device by sending the `st.Lock/unlock` command.
+    /// Unlock a device by sending the `st.lock/unlock` command.
     pub async fn unlock(&self, device: &Device) -> Result<Vec<DeviceWithStates>> {
         self.send_command(
             device,
             CommandSpec {
-                capability: "st.Lock".to_string(),
+                capability: "st.lock".to_string(),
                 name: "unlock".to_string(),
                 arguments: None,
             },
