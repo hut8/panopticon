@@ -15,14 +15,12 @@ pub async fn create_session(pool: &PgPool, user_id: uuid::Uuid) -> Result<String
     let session_id = generate_session_id();
     let expires_at = Utc::now() + Duration::days(SESSION_MAX_AGE_DAYS);
 
-    sqlx::query(
-        "INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, $3)",
-    )
-    .bind(&session_id)
-    .bind(user_id)
-    .bind(expires_at)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, $3)")
+        .bind(&session_id)
+        .bind(user_id)
+        .bind(expires_at)
+        .execute(pool)
+        .await?;
 
     Ok(session_id)
 }
@@ -45,9 +43,7 @@ pub fn set_session_cookie(session_id: &str, secure: bool) -> String {
 
 pub fn clear_session_cookie(secure: bool) -> String {
     let secure_flag = if secure { "; Secure" } else { "" };
-    format!(
-        "{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{secure_flag}"
-    )
+    format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{secure_flag}")
 }
 
 pub fn extract_session_id_from_cookies(cookie_header: &str) -> Option<&str> {

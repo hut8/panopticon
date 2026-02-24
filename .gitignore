@@ -17,5 +17,8 @@ panopticon/web/.svelte-kit/
 .env
 panopticon/.env
 
+# Logs
+.logs/
+
 # Claude
 .claude/
