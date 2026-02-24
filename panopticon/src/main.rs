@@ -1,3 +1,4 @@
+mod api;
 mod auth_store;
 mod db;
 mod email;
@@ -57,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .nest("/api/auth", email_auth::router())
+        .nest("/api", api::router())
         .nest("/auth", oauth::router())
         .fallback(handle_static_file)
         .layer(
