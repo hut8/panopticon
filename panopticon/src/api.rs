@@ -67,7 +67,7 @@ async fn list_devices(
             DeviceResponse {
                 id: lock.id.clone(),
                 name: lock.name.clone(),
-                lock_state: device_states.and_then(|s| s.lock_state().map(String::from)),
+                lock_state: device_states.and_then(|s| s.lock_state()),
                 battery_level: device_states.and_then(|s| s.battery_level()),
                 online: device_states.map_or(false, |s| s.is_online()),
             }
@@ -102,7 +102,7 @@ async fn lock_device(
     let lock_state = results
         .iter()
         .find(|s| s.id == id)
-        .and_then(|s| s.lock_state().map(String::from));
+        .and_then(|s| s.lock_state());
 
     Ok(Json(LockActionResponse {
         success: true,
@@ -135,7 +135,7 @@ async fn unlock_device(
     let lock_state = results
         .iter()
         .find(|s| s.id == id)
-        .and_then(|s| s.lock_state().map(String::from));
+        .and_then(|s| s.lock_state());
 
     Ok(Json(LockActionResponse {
         success: true,
