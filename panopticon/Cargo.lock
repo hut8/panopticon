@@ -1325,6 +1325,7 @@ dependencies = [
  "dirs",
  "dotenvy",
  "include_dir",
+ "ipnet",
  "lettre",
  "mime_guess",
  "rand 0.8.5",

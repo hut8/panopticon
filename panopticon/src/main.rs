@@ -3,6 +3,7 @@ mod auth_store;
 mod db;
 mod email;
 mod email_auth;
+mod ip_whitelist;
 mod middleware;
 mod oauth;
 mod session;
@@ -49,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let db = db::init_pool().await?;
     let auth_store = AuthStore::new()?;
     let mailer = Mailer::new()?;
+    let whitelist = ip_whitelist::load_whitelist()?;
 
     let state = AppState {
         db,
@@ -80,6 +82,9 @@ async fn main() -> anyhow::Result<()> {
                 })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
+        .layer(axum::middleware::from_fn(move |req, next| {
+            ip_whitelist::check(whitelist.clone(), req, next)
+        }))
         .with_state(state);
 
     let addr = "0.0.0.0:1337";
