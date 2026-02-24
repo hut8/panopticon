@@ -30,6 +30,12 @@ if [ ! -f "${ENV_FILE}" ]; then
 UTEC_CLIENT_ID=978782844363a4ccb4d5bcc2cd24d613
 UTEC_CLIENT_SECRET=2c44a8f01d13a2b8b01c13b6cf4aa1da
 UTEC_SCOPE=openapi
+DATABASE_URL=postgres:///panopticon
+SMTP_USERNAME=procnotify@hut8.tools
+SMTP_PASSWORD=changeme
+SMTP_HOST=smtp.mailgun.org
+SMTP_FROM=panopticon@hut8.tools
+BASE_URL=https://hut8.tools
 ENVEOF
     echo "    *** Review ${ENV_FILE} and update if needed ***"
 else

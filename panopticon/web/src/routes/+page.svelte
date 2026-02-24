@@ -1,36 +1,40 @@
 <script lang="ts">
-	interface AuthStatus {
+	interface UtecStatus {
 		authenticated: boolean;
 		user_name: string | null;
 		expires_at: string | null;
 	}
 
-	let status: AuthStatus | null = $state(null);
+	let utecStatus: UtecStatus | null = $state(null);
 	let loading = $state(true);
-	let error: string | null = $state(null);
 
-	async function checkAuth() {
+	async function checkUtec() {
 		try {
 			const res = await fetch('/auth/status');
-			status = await res.json();
-		} catch (e) {
-			error = 'Failed to check authentication status';
+			utecStatus = await res.json();
+		} catch {
+			utecStatus = null;
 		} finally {
 			loading = false;
 		}
 	}
 
-	async function logout() {
+	async function disconnectUtec() {
 		try {
 			await fetch('/auth/logout', { method: 'DELETE' });
-			status = { authenticated: false, user_name: null, expires_at: null };
-		} catch (e) {
-			error = 'Failed to logout';
+			utecStatus = { authenticated: false, user_name: null, expires_at: null };
+		} catch {
+			// ignore
 		}
 	}
 
+	async function handleLogout() {
+		await fetch('/api/auth/logout', { method: 'POST' });
+		window.location.href = '/login';
+	}
+
 	$effect(() => {
-		checkAuth();
+		checkUtec();
 	});
 </script>
 
@@ -38,36 +42,46 @@
 	<title>Panopticon</title>
 </svelte:head>
 
-<div class="flex h-full items-center justify-center p-4">
-	{#if loading}
-		<div class="card preset-filled-surface-200-800 p-8 text-center">
-			<p class="text-surface-600-400">Checking authentication...</p>
-		</div>
-	{:else if status?.authenticated}
-		<div class="card preset-filled-surface-200-800 space-y-6 p-8 text-center">
+<main class="flex flex-1 items-center justify-center p-6">
+	<div class="w-full max-w-sm space-y-6">
+		<div class="flex items-center justify-between">
 			<h1 class="h2">Panopticon</h1>
-			<p>
-				Signed in as <strong>{status.user_name ?? 'Unknown'}</strong>
-			</p>
-			{#if status.expires_at}
-				<p class="text-sm text-surface-600-400">
-					Token expires {new Date(status.expires_at).toLocaleString()}
-				</p>
-			{/if}
-			<button class="btn preset-filled-surface-400-600" onclick={logout}>
+			<button class="text-sm text-surface-500 hover:text-surface-300 cursor-pointer" onclick={handleLogout}>
 				Sign out
 			</button>
 		</div>
-	{:else}
-		<div class="card preset-filled-surface-200-800 space-y-6 p-8 text-center">
-			<h1 class="h2">Panopticon</h1>
-			<p class="text-surface-600-400">Sign in with your U-Tec account to manage your locks.</p>
-			{#if error}
-				<p class="preset-filled-error-500 rounded p-2 text-sm">{error}</p>
+
+		<div class="card preset-filled-surface-900 space-y-5 p-6">
+			<h2 class="h5">U-Tec Smart Lock</h2>
+
+			{#if loading}
+				<p class="text-sm text-surface-400 animate-pulse">Checking connection...</p>
+			{:else if utecStatus?.authenticated}
+				<div class="space-y-3">
+					<div class="flex items-center gap-3 rounded-md bg-success-500/10 px-4 py-3">
+						<div class="h-2 w-2 rounded-full bg-success-500"></div>
+						<div>
+							<p class="text-sm font-medium text-surface-200">Connected</p>
+							<p class="text-xs text-surface-400">{utecStatus.user_name ?? 'Unknown user'}</p>
+						</div>
+					</div>
+					{#if utecStatus.expires_at}
+						<p class="text-xs text-surface-500">
+							Token expires {new Date(utecStatus.expires_at).toLocaleString()}
+						</p>
+					{/if}
+					<button class="btn btn-base preset-outlined-surface-500 w-full" onclick={disconnectUtec}>
+						Disconnect
+					</button>
+				</div>
+			{:else}
+				<p class="text-sm text-surface-400">
+					Connect your U-Tec account to manage your smart locks.
+				</p>
+				<a href="/auth/login" class="btn btn-base preset-filled-primary-500 w-full">
+					Connect U-Tec Account
+				</a>
 			{/if}
-			<a href="/auth/login" class="btn preset-filled-primary-500 btn-lg">
-				Sign in with U-Tec
-			</a>
 		</div>
-	{/if}
-</div>
+	</div>
+</main>

@@ -1,5 +1,10 @@
 mod auth_store;
+mod db;
+mod email;
+mod email_auth;
+mod middleware;
 mod oauth;
+mod session;
 pub mod utec;
 
 use axum::{
@@ -9,13 +14,22 @@ use axum::{
 };
 use include_dir::{include_dir, Dir};
 use mime_guess::from_path;
+use sqlx::PgPool;
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{info, Level};
 
 use auth_store::AuthStore;
+use email::Mailer;
 
 // Embed web assets into the binary at compile time
 static ASSETS: Dir<'_> = include_dir!("web/build");
+
+#[derive(Clone)]
+pub struct AppState {
+    pub db: PgPool,
+    pub auth_store: AuthStore,
+    pub mailer: Mailer,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,10 +45,19 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    let db = db::init_pool().await?;
     let auth_store = AuthStore::new()?;
+    let mailer = Mailer::new()?;
+
+    let state = AppState {
+        db,
+        auth_store,
+        mailer,
+    };
 
     let app = Router::new()
-        .nest("/auth", oauth::router(auth_store))
+        .nest("/api/auth", email_auth::router())
+        .nest("/auth", oauth::router())
         .fallback(handle_static_file)
         .layer(
             TraceLayer::new_for_http()
@@ -54,7 +77,8 @@ async fn main() -> anyhow::Result<()> {
                     )
                 })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
-        );
+        )
+        .with_state(state);
 
     let addr = "0.0.0.0:1337";
     info!("Panopticon listening on {addr}");

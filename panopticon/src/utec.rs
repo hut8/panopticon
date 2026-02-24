@@ -89,12 +89,9 @@ impl std::error::Error for ApiError {}
 
 /// User info returned by `Uhome.User/Get`.
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct User {
     pub id: String,
     pub last_name: String,
-    /// U-Tec inconsistently capitalizes this as "FirstName" in their docs.
-    #[serde(alias = "FirstName")]
     pub first_name: String,
 }
 

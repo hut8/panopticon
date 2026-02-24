@@ -18,8 +18,10 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
-use crate::auth_store::{AuthData, AuthStore};
+use crate::auth_store::AuthData;
+use crate::middleware::AuthUser;
 use crate::utec::UTec;
+use crate::AppState;
 
 /// U-Tec OAuth2 endpoints
 const AUTHORIZE_URI: &str = "https://oauth.u-tec.com/authorize";
@@ -39,17 +41,16 @@ static CLIENT_SECRET: LazyLock<String> = LazyLock::new(|| {
 static SCOPE: LazyLock<String> =
     LazyLock::new(|| std::env::var("UTEC_SCOPE").unwrap_or_else(|_| "openapi".to_string()));
 
-pub fn router(auth_store: AuthStore) -> Router {
+pub fn router() -> Router<AppState> {
     Router::new()
         .route("/login", get(login))
         .route("/callback", get(callback))
         .route("/status", get(status))
         .route("/logout", delete(logout))
-        .with_state(auth_store)
 }
 
 /// Redirect the user to U-Tec's OAuth2 authorization page.
-async fn login() -> Response {
+async fn login(_user: AuthUser) -> Response {
     let state = generate_state();
     let redirect_uri = format!("{}/auth/callback", REDIRECT_HOST);
 
@@ -79,7 +80,7 @@ struct CallbackParams {
 /// Exchanges the authorization code for an access token, verifies by fetching
 /// user info, then persists the token to disk.
 async fn callback(
-    State(auth_store): State<AuthStore>,
+    State(state): State<AppState>,
     Query(params): Query<CallbackParams>,
 ) -> Response {
     // U-Tec uses `authorization_code` as the parameter name per their docs,
@@ -96,8 +97,8 @@ async fn callback(
         }
     };
 
-    if let Some(state) = &params.state {
-        info!("OAuth callback received with state: {}", state);
+    if let Some(state_param) = &params.state {
+        info!("OAuth callback received with state: {}", state_param);
         // TODO: Validate state matches what we sent (CSRF protection)
     }
 
@@ -144,7 +145,7 @@ async fn callback(
         user_name: user_name.clone(),
     };
 
-    if let Err(e) = auth_store.save(auth_data).await {
+    if let Err(e) = state.auth_store.save(auth_data).await {
         error!("Failed to save auth token: {e}");
         return (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -166,8 +167,8 @@ struct AuthStatus {
 }
 
 /// Check whether we have a valid cached token.
-async fn status(State(auth_store): State<AuthStore>) -> Json<AuthStatus> {
-    match auth_store.get().await {
+async fn status(_user: AuthUser, State(state): State<AppState>) -> Json<AuthStatus> {
+    match state.auth_store.get().await {
         Some(data) => {
             let expired = data
                 .expires_at
@@ -188,8 +189,8 @@ async fn status(State(auth_store): State<AuthStore>) -> Json<AuthStatus> {
 }
 
 /// Clear cached credentials.
-async fn logout(State(auth_store): State<AuthStore>) -> Response {
-    match auth_store.clear().await {
+async fn logout(_user: AuthUser, State(state): State<AppState>) -> Response {
+    match state.auth_store.clear().await {
         Ok(_) => axum::http::StatusCode::NO_CONTENT.into_response(),
         Err(e) => {
             error!("Failed to clear auth: {e}");
