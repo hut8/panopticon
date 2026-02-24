@@ -69,7 +69,7 @@ async fn list_devices(
                 name: lock.name.clone(),
                 lock_state: device_states.and_then(|s| s.lock_state().map(String::from)),
                 battery_level: device_states.and_then(|s| s.battery_level()),
-                online: device_states.map_or(false, |s| s.is_online()),
+                online: device_states.is_some_and(|s| s.is_online()),
             }
         })
         .collect();
