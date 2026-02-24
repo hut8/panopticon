@@ -131,7 +131,7 @@ impl AuthStore {
 ///
 /// 1. `/var/lib/panopticon/` if it exists and is writable
 /// 2. `$XDG_DATA_HOME/panopticon/` (typically `~/.local/share/panopticon/`)
-fn resolve_auth_path() -> PathBuf {
+pub fn resolve_auth_path() -> PathBuf {
     let system_dir = Path::new("/var/lib/panopticon");
     if is_writable_dir(system_dir) {
         return system_dir.join("auth.json");
