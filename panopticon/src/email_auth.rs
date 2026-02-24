@@ -58,7 +58,10 @@ async fn register(State(state): State<AppState>, Json(body): Json<RegisterReques
         return json_error(StatusCode::BAD_REQUEST, "Invalid email address");
     }
     if body.password.len() < 8 {
-        return json_error(StatusCode::BAD_REQUEST, "Password must be at least 8 characters");
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            "Password must be at least 8 characters",
+        );
     }
 
     let password_hash = match hash_password(&body.password) {
@@ -89,7 +92,10 @@ async fn register(State(state): State<AppState>, Json(body): Json<RegisterReques
     let user_id = match user_id {
         Some((id,)) => id,
         None => {
-            return json_error(StatusCode::CONFLICT, "An account with this email already exists");
+            return json_error(
+                StatusCode::CONFLICT,
+                "An account with this email already exists",
+            );
         }
     };
 
@@ -131,7 +137,9 @@ async fn register(State(state): State<AppState>, Json(body): Json<RegisterReques
 
     response.headers_mut().insert(
         "set-cookie",
-        set_session_cookie(&session_id, is_secure()).parse().unwrap(),
+        set_session_cookie(&session_id, is_secure())
+            .parse()
+            .unwrap(),
     );
 
     response
@@ -193,7 +201,9 @@ async fn login(State(state): State<AppState>, Json(body): Json<LoginRequest>) ->
 
     response.headers_mut().insert(
         "set-cookie",
-        set_session_cookie(&session_id, is_secure()).parse().unwrap(),
+        set_session_cookie(&session_id, is_secure())
+            .parse()
+            .unwrap(),
     );
 
     response
@@ -303,9 +313,16 @@ async fn resend_confirmation(State(state): State<AppState>, user: AuthUser) -> R
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to send confirmation email");
     }
 
-    if let Err(e) = state.mailer.send_confirmation_email(&user.email, &token).await {
+    if let Err(e) = state
+        .mailer
+        .send_confirmation_email(&user.email, &token)
+        .await
+    {
         error!("Failed to send confirmation email: {e}");
-        return json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to send confirmation email");
+        return json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to send confirmation email",
+        );
     }
 
     Json(serde_json::json!({"message": "Confirmation email sent"})).into_response()
@@ -325,12 +342,11 @@ async fn forgot_password(
     let email = body.email.trim().to_lowercase();
 
     // Always return 200 to prevent email enumeration
-    let row: Option<(uuid::Uuid,)> =
-        sqlx::query_as("SELECT id FROM users WHERE email = $1")
-            .bind(&email)
-            .fetch_optional(&state.db)
-            .await
-            .unwrap_or(None);
+    let row: Option<(uuid::Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None);
 
     if let Some((user_id,)) = row {
         let token = generate_token();
@@ -368,7 +384,10 @@ async fn reset_password(
     Json(body): Json<ResetPasswordRequest>,
 ) -> Response {
     if body.password.len() < 8 {
-        return json_error(StatusCode::BAD_REQUEST, "Password must be at least 8 characters");
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            "Password must be at least 8 characters",
+        );
     }
 
     let row: Option<(uuid::Uuid,)> = match sqlx::query_as(
@@ -402,13 +421,12 @@ async fn reset_password(
         }
     };
 
-    if let Err(e) = sqlx::query(
-        "UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2",
-    )
-    .bind(&password_hash)
-    .bind(user_id)
-    .execute(&state.db)
-    .await
+    if let Err(e) =
+        sqlx::query("UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2")
+            .bind(&password_hash)
+            .bind(user_id)
+            .execute(&state.db)
+            .await
     {
         error!("Failed to update password: {e}");
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, "Password reset failed");
@@ -443,9 +461,7 @@ fn hash_password(password: &str) -> anyhow::Result<String> {
 }
 
 fn verify_password(password: &str, hash: &str) -> bool {
-    use argon2::{
-        password_hash::PasswordHash, Argon2, PasswordVerifier,
-    };
+    use argon2::{password_hash::PasswordHash, Argon2, PasswordVerifier};
 
     let parsed_hash = match PasswordHash::new(hash) {
         Ok(h) => h,
