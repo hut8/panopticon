@@ -18,7 +18,8 @@ impl Mailer {
         let smtp_host = std::env::var("SMTP_HOST").context("SMTP_HOST must be set")?;
         let smtp_username = std::env::var("SMTP_USERNAME").context("SMTP_USERNAME must be set")?;
         let smtp_password = std::env::var("SMTP_PASSWORD").context("SMTP_PASSWORD must be set")?;
-        let smtp_from = std::env::var("SMTP_FROM").unwrap_or_else(|_| "panopticon@hut8.tools".into());
+        let smtp_from =
+            std::env::var("SMTP_FROM").unwrap_or_else(|_| "panopticon@hut8.tools".into());
         let base_url = std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:5173".into());
 
         let creds = Credentials::new(smtp_username, smtp_password);
@@ -103,7 +104,13 @@ fn password_reset_template(reset_url: &str) -> String {
     )
 }
 
-fn email_template(heading: &str, body: &str, button_text: &str, button_url: &str, footer: &str) -> String {
+fn email_template(
+    heading: &str,
+    body: &str,
+    button_text: &str,
+    button_url: &str,
+    footer: &str,
+) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html>
