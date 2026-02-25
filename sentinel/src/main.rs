@@ -1,11 +1,9 @@
 mod rfiduino;
 
-use std::thread;
 use std::time::Duration;
 
 use anyhow::{bail, Result};
 use embedded_svc::http::client::Client as HttpClient;
-use embedded_svc::http::Method;
 use embedded_svc::io::Write;
 use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
 use esp_idf_svc::hal::delay::FreeRtos;
@@ -16,7 +14,7 @@ use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
 use log::{error, info, warn};
 
-use rfiduino::{format_tag_id, RFIDuino, TagId};
+use rfiduino::{format_tag_id, format_tag_id_hex, RFIDuino, TagId};
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
@@ -24,18 +22,11 @@ use rfiduino::{format_tag_id, RFIDuino, TagId};
 const WIFI_SSID: &str = "YOUR_WIFI_SSID";
 const WIFI_PASS: &str = "YOUR_WIFI_PASSWORD";
 
-/// IFTTT Webhook configuration.
-/// Your webhook URL is: https://maker.ifttt.com/trigger/{EVENT}/with/key/{KEY}
-const IFTTT_EVENT: &str = "rfid_door";
-const IFTTT_KEY: &str = "YOUR_IFTTT_KEY";
+/// Panopticon server URL (HTTP, LAN only).
+const PANOPTICON_URL: &str = "http://192.168.1.100:1337";
 
-/// Allowlist of authorised RFID tag IDs.
-/// Each entry is [manufacturer_byte, id_byte_1, id_byte_2, id_byte_3, id_byte_4].
-/// Find your tag IDs by scanning them and reading the log output.
-const ALLOWED_TAGS: &[TagId] = &[
-    [128, 0, 72, 35, 76],  // Example — replace with your actual tag IDs
-    [128, 0, 12, 99, 200], // Example — replace with your actual tag IDs
-];
+/// Shared secret for authenticating with panopticon.
+const SENTINEL_SECRET: &str = "changeme";
 
 /// Cooldown between successful scans of the same tag (prevents rapid re-triggering).
 const SCAN_COOLDOWN: Duration = Duration::from_secs(5);
@@ -108,14 +99,11 @@ fn main() -> Result<()> {
             };
 
             if should_trigger {
-                if is_allowed(&tag) {
-                    info!("Tag AUTHORISED — triggering IFTTT webhook");
-                    match trigger_ifttt(&tag_str) {
-                        Ok(()) => info!("Webhook fired successfully"),
-                        Err(e) => error!("Webhook failed: {e}"),
-                    }
-                } else {
-                    warn!("Tag DENIED: {}", tag_str);
+                let hex_id = format_tag_id_hex(&tag);
+                match report_scan(&hex_id) {
+                    Ok(true) => info!("Access granted or enrolled for {}", hex_id),
+                    Ok(false) => warn!("Access denied for {}", hex_id),
+                    Err(e) => error!("Failed to report scan: {e}"),
                 }
                 last_scan = Some((tag, std::time::Instant::now()));
             }
@@ -151,16 +139,12 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {
     Ok(())
 }
 
-// ── IFTTT webhook ──────────────────────────────────────────────────────────
+// ── Panopticon scan report ─────────────────────────────────────────────────
 
-fn trigger_ifttt(tag_str: &str) -> Result<()> {
-    let url = format!(
-        "https://maker.ifttt.com/trigger/{}/with/key/{}",
-        IFTTT_EVENT, IFTTT_KEY
-    );
-
-    // JSON payload with the tag ID as value1
-    let body = format!(r#"{{"value1":"{}"}}"#, tag_str);
+/// POST the scanned tag to panopticon. Returns true if action is "granted" or "enrolled".
+fn report_scan(tag_id: &str) -> Result<bool> {
+    let url = format!("{}/api/sentinel/scan", PANOPTICON_URL);
+    let body = format!(r#"{{"tag_id":"{}","secret":"{}"}}"#, tag_id, SENTINEL_SECRET);
     let content_length = body.len().to_string();
 
     let headers = [
@@ -169,7 +153,6 @@ fn trigger_ifttt(tag_str: &str) -> Result<()> {
     ];
 
     let mut client = HttpClient::wrap(EspHttpConnection::new(&HttpConfig {
-        crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
         ..Default::default()
     })?);
 
@@ -181,15 +164,18 @@ fn trigger_ifttt(tag_str: &str) -> Result<()> {
     let status = response.status();
 
     if !(200..300).contains(&(status as i32)) {
-        bail!("IFTTT returned HTTP {status}");
+        bail!("Panopticon returned HTTP {status}");
     }
-    Ok(())
-}
 
-// ── Allowlist check ────────────────────────────────────────────────────────
+    // Read response body to check the action
+    let mut buf = [0u8; 256];
+    let mut reader = response;
+    let len = embedded_svc::io::Read::read(&mut reader, &mut buf).unwrap_or(0);
+    let body_str = core::str::from_utf8(&buf[..len]).unwrap_or("");
 
-fn is_allowed(tag: &TagId) -> bool {
-    ALLOWED_TAGS.iter().any(|allowed| allowed == tag)
+    // Simple check — look for "granted" or "enrolled" in the response
+    let success = body_str.contains("granted") || body_str.contains("enrolled");
+    Ok(success)
 }
 
 // ── Pin mapping helpers ────────────────────────────────────────────────────
