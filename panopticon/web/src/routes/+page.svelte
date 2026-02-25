@@ -13,12 +13,32 @@
 		online: boolean;
 	}
 
+	interface AccessCard {
+		id: string;
+		tag_id: string;
+		label: string | null;
+		created_at: string;
+	}
+
+	interface ScanLogEntry {
+		id: string;
+		tag_id: string;
+		action: string;
+		created_at: string;
+	}
+
 	let utecStatus: UtecStatus | null = $state(null);
 	let devices: DeviceInfo[] = $state([]);
 	let loading = $state(true);
 	let devicesLoading = $state(false);
 	let actionInFlight: Record<string, boolean> = $state({});
 	let error: string | null = $state(null);
+
+	// Access control state
+	let sentinelMode: string = $state('guard');
+	let modeLoading = $state(false);
+	let cards: AccessCard[] = $state([]);
+	let scanLog: ScanLogEntry[] = $state([]);
 
 	async function checkUtec() {
 		try {
@@ -81,8 +101,79 @@
 		window.location.href = '/login';
 	}
 
+	async function loadSentinelMode() {
+		try {
+			const res = await fetch('/api/sentinel/mode');
+			if (res.ok) {
+				const data = await res.json();
+				sentinelMode = data.mode;
+			}
+		} catch {
+			// ignore
+		}
+	}
+
+	async function toggleMode() {
+		const newMode = sentinelMode === 'guard' ? 'enroll' : 'guard';
+		modeLoading = true;
+		try {
+			const res = await fetch('/api/sentinel/mode', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mode: newMode })
+			});
+			if (res.ok) {
+				const data = await res.json();
+				sentinelMode = data.mode;
+			}
+		} catch {
+			// ignore
+		} finally {
+			modeLoading = false;
+		}
+	}
+
+	async function loadCards() {
+		try {
+			const res = await fetch('/api/sentinel/cards');
+			if (res.ok) cards = await res.json();
+		} catch {
+			// ignore
+		}
+	}
+
+	async function removeCard(id: string) {
+		try {
+			const res = await fetch(`/api/sentinel/cards/${id}`, { method: 'DELETE' });
+			if (res.ok) cards = cards.filter((c) => c.id !== id);
+		} catch {
+			// ignore
+		}
+	}
+
+	async function loadScanLog() {
+		try {
+			const res = await fetch('/api/sentinel/scan-log');
+			if (res.ok) scanLog = await res.json();
+		} catch {
+			// ignore
+		}
+	}
+
+	function formatDate(iso: string): string {
+		return new Date(iso).toLocaleDateString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	}
+
 	$effect(() => {
 		checkUtec();
+		loadSentinelMode();
+		loadCards();
+		loadScanLog();
 	});
 
 	$effect(() => {
@@ -285,5 +376,86 @@
 				{/each}
 			{/if}
 		{/if}
+
+		<!-- Access Control -->
+		<div class="card preset-filled-surface-900 space-y-4 p-6">
+			<div class="flex items-center justify-between">
+				<h2 class="h5">Access Control</h2>
+				<button
+					class="btn btn-sm {sentinelMode === 'enroll'
+						? 'preset-filled-warning-500'
+						: 'preset-outlined-surface-500'}"
+					disabled={modeLoading}
+					onclick={toggleMode}
+				>
+					{#if modeLoading}
+						<span class="animate-pulse">Switching...</span>
+					{:else}
+						{sentinelMode === 'guard' ? 'Guard Mode' : 'Enroll Mode'}
+					{/if}
+				</button>
+			</div>
+			{#if sentinelMode === 'enroll'}
+				<div class="rounded-md bg-warning-500/15 px-3 py-2">
+					<p class="text-xs text-warning-400">
+						Enroll mode active — scan a card to register it. Switch back to guard mode when done.
+					</p>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Enrolled Cards -->
+		<div class="card preset-filled-surface-900 space-y-4 p-6">
+			<h2 class="h5">Enrolled Cards</h2>
+			{#if cards.length === 0}
+				<p class="text-sm text-surface-400">No cards enrolled yet.</p>
+			{:else}
+				<div class="space-y-2">
+					{#each cards as card (card.id)}
+						<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
+							<div>
+								<p class="font-mono text-sm text-surface-200">{card.tag_id}</p>
+								<p class="text-xs text-surface-500">{formatDate(card.created_at)}</p>
+							</div>
+							<button
+								class="text-xs text-error-400 hover:text-error-300 cursor-pointer"
+								onclick={() => removeCard(card.id)}
+							>
+								Remove
+							</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<!-- Recent Scans -->
+		<div class="card preset-filled-surface-900 space-y-4 p-6">
+			<h2 class="h5">Recent Scans</h2>
+			{#if scanLog.length === 0}
+				<p class="text-sm text-surface-400">No scans recorded yet.</p>
+			{:else}
+				<div class="space-y-2">
+					{#each scanLog.slice(0, 10) as entry (entry.id)}
+						<div class="flex items-center gap-3 rounded-md bg-surface-800 px-3 py-2">
+							<div
+								class="h-2 w-2 flex-shrink-0 rounded-full {entry.action === 'granted'
+									? 'bg-success-500'
+									: entry.action === 'denied'
+										? 'bg-error-500'
+										: 'bg-primary-500'}"
+							></div>
+							<div class="flex-1 min-w-0">
+								<p class="font-mono text-sm text-surface-200 truncate">{entry.tag_id}</p>
+							</div>
+							<div class="flex-shrink-0 text-right">
+								<p class="text-xs capitalize text-surface-300">{entry.action}</p>
+								<p class="text-xs text-surface-500">{formatDate(entry.created_at)}</p>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
 	</div>
 </main>

@@ -6,6 +6,7 @@ mod email_auth;
 mod ip_whitelist;
 mod middleware;
 mod oauth;
+mod sentinel;
 mod session;
 pub mod utec;
 
@@ -31,6 +32,7 @@ pub struct AppState {
     pub db: PgPool,
     pub auth_store: AuthStore,
     pub mailer: Mailer,
+    pub sentinel_secret: String,
 }
 
 #[tokio::main]
@@ -52,14 +54,19 @@ async fn main() -> anyhow::Result<()> {
     let mailer = Mailer::new()?;
     let whitelist = ip_whitelist::load_whitelist()?;
 
+    let sentinel_secret =
+        std::env::var("SENTINEL_SECRET").unwrap_or_else(|_| "changeme".to_string());
+
     let state = AppState {
         db,
         auth_store,
         mailer,
+        sentinel_secret,
     };
 
     let app = Router::new()
         .nest("/api/auth", email_auth::router())
+        .nest("/api/sentinel", sentinel::router())
         .nest("/api", api::router())
         .nest("/auth", oauth::router())
         .fallback(handle_static_file)

@@ -224,6 +224,14 @@ pub fn format_tag_id(tag: &TagId) -> String {
     format!("{},{},{},{},{}", tag[0], tag[1], tag[2], tag[3], tag[4])
 }
 
+/// Format a 5-byte tag ID as colon-separated uppercase hex: "80:00:48:23:4C"
+pub fn format_tag_id_hex(tag: &TagId) -> String {
+    format!(
+        "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+        tag[0], tag[1], tag[2], tag[3], tag[4]
+    )
+}
+
 /// Convert the 4 data bytes of a tag ID (bytes 1-4) to a u32.
 /// Byte 0 is the manufacturer/version byte and is excluded.
 pub fn tag_id_to_u32(tag: &TagId) -> u32 {
