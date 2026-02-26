@@ -16,6 +16,7 @@ use axum::{
     Json, Router,
 };
 use serde::Deserialize;
+use subtle::ConstantTimeEq;
 use tracing::{info, warn};
 
 use crate::utec::DeviceWithStates;
@@ -59,7 +60,7 @@ async fn handle_utec_notification(
     };
 
     let provided = params.access_token.unwrap_or_default();
-    if provided != expected {
+    if provided.as_bytes().ct_eq(expected.as_bytes()).unwrap_u8() != 1 {
         warn!("Webhook received with invalid token");
         return StatusCode::UNAUTHORIZED;
     }
