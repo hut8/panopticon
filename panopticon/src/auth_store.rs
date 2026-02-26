@@ -30,6 +30,10 @@ pub struct AuthData {
     /// U-Tec user ID for logging/display purposes.
     pub user_id: Option<String>,
     pub user_name: Option<String>,
+    /// Token sent to U-Tec during webhook registration and echoed back
+    /// on each notification for authentication.
+    #[serde(default)]
+    pub notification_token: Option<String>,
 }
 
 /// Thread-safe auth store backed by a JSON file.
@@ -113,6 +117,15 @@ impl AuthStore {
     /// Get the current auth data (if any).
     pub async fn get(&self) -> Option<AuthData> {
         self.inner.read().await.clone()
+    }
+
+    /// Get the notification token used to authenticate incoming webhooks.
+    pub async fn notification_token(&self) -> Option<String> {
+        self.inner
+            .read()
+            .await
+            .as_ref()
+            .and_then(|d| d.notification_token.clone())
     }
 
     /// Clear auth data (logout).
