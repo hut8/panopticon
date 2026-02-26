@@ -17,7 +17,8 @@ use axum::{
 };
 use serde::Deserialize;
 use subtle::ConstantTimeEq;
-use tracing::{info, warn};
+use tower_http::limit::RequestBodyLimitLayer;
+use tracing::info;
 
 use crate::utec::DeviceWithStates;
 use crate::ws::WsEvent;
@@ -42,7 +43,9 @@ struct NotificationPayload {
 }
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/utec", post(handle_utec_notification))
+    Router::new()
+        .route("/utec", post(handle_utec_notification))
+        .layer(RequestBodyLimitLayer::new(1024 * 1024))
 }
 
 async fn handle_utec_notification(
@@ -54,14 +57,14 @@ async fn handle_utec_notification(
     let expected = match state.auth_store.notification_token().await {
         Some(t) => t,
         None => {
-            warn!("Webhook received but no notification token configured");
+            info!("Webhook received but no notification token configured");
             return StatusCode::UNAUTHORIZED;
         }
     };
 
     let provided = params.access_token.unwrap_or_default();
     if provided.as_bytes().ct_eq(expected.as_bytes()).unwrap_u8() != 1 {
-        warn!("Webhook received with invalid token");
+        info!("Webhook received with invalid token");
         return StatusCode::UNAUTHORIZED;
     }
 
