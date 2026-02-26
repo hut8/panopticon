@@ -1,5 +1,12 @@
 self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : {};
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (_) {
+      data = {};
+    }
+  }
   const title = data.title || 'Panopticon';
   const options = {
     body: data.body || '',
