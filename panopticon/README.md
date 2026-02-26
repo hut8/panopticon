@@ -141,3 +141,46 @@ Builds release binary (including Svelte app), installs to `/usr/local/bin/panopt
 sudo cp Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
+
+## Known bugs
+
+### 1. U-Tec webhook notifications never arrive
+
+Registering a notification webhook via `Uhome.Configure/Set` returns a successful response, but U-Tec never calls the registered URL when device state changes (e.g., lock/unlock from the Google Home app or physically). No incoming webhook requests appear in server logs at all.
+
+### 2. Missing `DoorSensor` capability for `utec-lock-sensor` devices
+
+The [U-Tec documentation](https://doc.api.u-tec.com/#774fb309-95c0-4a3a-a03b-5448f0172bc4) indicates that devices with `handleType: "utec-lock-sensor"` should report a `DoorSensor` capability (door open/closed state). However, the API does not return this capability even though the device identifies as `utec-lock-sensor`.
+
+Discovery response shows `handleType: "utec-lock-sensor"`:
+```json
+{
+  "devices": [{
+    "id": "AA:BB:CC:DD:EE:FF",
+    "name": "Front Door",
+    "category": "SmartLock",
+    "handleType": "utec-lock-sensor",
+    "deviceInfo": { "manufacturer": "U-tec", "model": "Bolt-NFC-W", "hwVersion": "01.50.0036" },
+    "attributes": { "batteryLevelRange": { "min": 1, "max": 5, "step": 1 } }
+  }]
+}
+```
+
+But the Query response only returns `st.healthCheck`, `st.lock`, and `st.batteryLevel` — no `DoorSensor`:
+```json
+{
+  "devices": [{
+    "id": "AA:BB:CC:DD:EE:FF",
+    "states": [
+      { "capability": "st.healthCheck", "name": "status", "value": "Online" },
+      { "capability": "st.lock", "name": "lockState", "value": "Unlocked" },
+      { "capability": "st.lock", "name": "lockMode", "value": 0 },
+      { "capability": "st.batteryLevel", "name": "level", "value": 5 }
+    ]
+  }]
+}
+```
+
+### 3. `st.doorSensor` documentation describes the wrong capability
+
+The U-Tec docs describe `st.doorSensor` as "An indication of the status of the battery", which is clearly a copy-paste error from `st.batteryLevel`. This is the capability we need for door open/closed state from `utec-lock-sensor` devices (see bug #2), but the incorrect documentation makes it unclear what the actual payload looks like.
