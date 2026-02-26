@@ -35,15 +35,27 @@ where
             .get("cookie")
             .and_then(|v| v.to_str().ok())
             .ok_or_else(|| {
-                (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Not authenticated"}))).into_response()
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"error": "Not authenticated"})),
+                )
+                    .into_response()
             })?;
 
         let session_id = extract_session_id_from_cookies(cookie_header).ok_or_else(|| {
-            (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Not authenticated"}))).into_response()
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Not authenticated"})),
+            )
+                .into_response()
         })?;
 
         let user = get_user_by_session(pool, session_id).await.ok_or_else(|| {
-            (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Session expired"}))).into_response()
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Session expired"})),
+            )
+                .into_response()
         })?;
 
         Ok(user)
