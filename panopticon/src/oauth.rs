@@ -132,6 +132,22 @@ async fn callback(State(state): State<AppState>, Query(params): Query<CallbackPa
         }
     };
 
+    // Generate a notification token for webhook authentication
+    let notification_token = generate_notification_token();
+    let webhook_url = format!(
+        "{}/api/webhooks/utec?access_token={}",
+        REDIRECT_HOST, notification_token
+    );
+
+    // Register webhook with U-Tec
+    match client
+        .set_notification_url(&webhook_url, &notification_token)
+        .await
+    {
+        Ok(()) => info!("Registered webhook URL with U-Tec"),
+        Err(e) => error!("Failed to register webhook URL: {e}"),
+    }
+
     // Persist to disk
     let auth_data = AuthData {
         access_token: token_response.access_token,
@@ -139,6 +155,7 @@ async fn callback(State(state): State<AppState>, Query(params): Query<CallbackPa
         expires_at,
         user_id,
         user_name: user_name.clone(),
+        notification_token: Some(notification_token),
     };
 
     if let Err(e) = state.auth_store.save(auth_data).await {
@@ -264,4 +281,11 @@ fn generate_state() -> String {
         .unwrap()
         .as_nanos();
     format!("{:x}", nonce)
+}
+
+/// Generate a random hex token for webhook authentication.
+fn generate_notification_token() -> String {
+    use rand::Rng;
+    let bytes: [u8; 32] = rand::thread_rng().gen();
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
