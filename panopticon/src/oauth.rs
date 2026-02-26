@@ -35,9 +35,8 @@ const REDIRECT_HOST: &str = "https://hut8.tools";
 /// Optional: UTEC_SCOPE (defaults to "openapi")
 static CLIENT_ID: LazyLock<String> =
     LazyLock::new(|| std::env::var("UTEC_CLIENT_ID").expect("UTEC_CLIENT_ID must be set"));
-static CLIENT_SECRET: LazyLock<String> = LazyLock::new(|| {
-    std::env::var("UTEC_CLIENT_SECRET").expect("UTEC_CLIENT_SECRET must be set")
-});
+static CLIENT_SECRET: LazyLock<String> =
+    LazyLock::new(|| std::env::var("UTEC_CLIENT_SECRET").expect("UTEC_CLIENT_SECRET must be set"));
 static SCOPE: LazyLock<String> =
     LazyLock::new(|| std::env::var("UTEC_SCOPE").unwrap_or_else(|_| "openapi".to_string()));
 
@@ -79,10 +78,7 @@ struct CallbackParams {
 ///
 /// Exchanges the authorization code for an access token, verifies by fetching
 /// user info, then persists the token to disk.
-async fn callback(
-    State(state): State<AppState>,
-    Query(params): Query<CallbackParams>,
-) -> Response {
+async fn callback(State(state): State<AppState>, Query(params): Query<CallbackParams>) -> Response {
     // U-Tec uses `authorization_code` as the parameter name per their docs,
     // but fall back to standard `code` just in case
     let code = match params.authorization_code.or(params.code) {
@@ -226,16 +222,15 @@ async fn exchange_code(code: &str) -> anyhow::Result<TokenResponse> {
 
     tracing::info!(
         "Exchanging code at {} with client_id={}, redirect_uri={}, code={}...{}",
-        TOKEN_URI, &*CLIENT_ID, &redirect_uri,
-        &code[..4.min(code.len())], &code[code.len().saturating_sub(4)..],
+        TOKEN_URI,
+        &*CLIENT_ID,
+        &redirect_uri,
+        &code[..4.min(code.len())],
+        &code[code.len().saturating_sub(4)..],
     );
 
     let client = reqwest::Client::new();
-    let response = client
-        .post(TOKEN_URI)
-        .form(&params)
-        .send()
-        .await?;
+    let response = client.post(TOKEN_URI).form(&params).send().await?;
 
     let status = response.status();
     let headers = format!("{:?}", response.headers());
@@ -249,7 +244,10 @@ async fn exchange_code(code: &str) -> anyhow::Result<TokenResponse> {
     // U-Tec returns 200 even for errors, so check for error field first
     if let Ok(err) = serde_json::from_str::<serde_json::Value>(&body) {
         if let Some(error) = err.get("error").and_then(|e| e.as_str()) {
-            let desc = err.get("error_description").and_then(|d| d.as_str()).unwrap_or("");
+            let desc = err
+                .get("error_description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
             anyhow::bail!("Token endpoint error: {error}: {desc}");
         }
     }
