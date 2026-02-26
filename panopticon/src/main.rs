@@ -6,6 +6,7 @@ mod email_auth;
 mod ip_whitelist;
 mod middleware;
 mod oauth;
+mod push;
 mod sentinel;
 mod session;
 pub mod utec;
@@ -25,6 +26,7 @@ use tracing::{info, Level};
 
 use auth_store::AuthStore;
 use email::Mailer;
+use push::PushConfig;
 
 // Embed web assets into the binary at compile time
 static ASSETS: Dir<'_> = include_dir!("web/build");
@@ -34,6 +36,7 @@ pub struct AppState {
     pub db: PgPool,
     pub auth_store: AuthStore,
     pub mailer: Mailer,
+    pub push_config: Option<PushConfig>,
     pub sentinel_secret: String,
     pub events: broadcast::Sender<ws::WsEvent>,
 }
@@ -55,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
     let db = db::init_pool().await?;
     let auth_store = AuthStore::new()?;
     let mailer = Mailer::new()?;
+    let push_config = PushConfig::new()?;
     let whitelist = ip_whitelist::load_whitelist()?;
 
     let sentinel_secret =
@@ -70,10 +74,17 @@ async fn main() -> anyhow::Result<()> {
         mailer.clone(),
     ));
 
+    // Spawn push notifier if VAPID keys are configured
+    if let Some(ref pc) = push_config {
+        let push_rx = events_tx.subscribe();
+        tokio::spawn(push::spawn_push_notifier(push_rx, db.clone(), pc.clone()));
+    }
+
     let state = AppState {
         db,
         auth_store,
         mailer,
+        push_config,
         sentinel_secret,
         events: events_tx,
     };
@@ -81,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .nest("/api/auth", email_auth::router())
         .nest("/api/sentinel", sentinel::router())
+        .nest("/api", push::router())
         .nest("/api", api::router())
         .nest("/api", ws::router())
         .nest("/auth", oauth::router())
