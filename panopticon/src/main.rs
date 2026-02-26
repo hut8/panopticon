@@ -9,6 +9,7 @@ mod oauth;
 mod sentinel;
 mod session;
 pub mod utec;
+mod webhook;
 mod ws;
 
 use axum::{
@@ -78,13 +79,23 @@ async fn main() -> anyhow::Result<()> {
         events: events_tx,
     };
 
-    let app = Router::new()
+    // Routes behind the IP whitelist (all normal app routes)
+    let protected = Router::new()
         .nest("/api/auth", email_auth::router())
         .nest("/api/sentinel", sentinel::router())
         .nest("/api", api::router())
         .nest("/api", ws::router())
         .nest("/auth", oauth::router())
         .fallback(handle_static_file)
+        .layer(axum::middleware::from_fn(move |req, next| {
+            ip_whitelist::check(whitelist.clone(), req, next)
+        }));
+
+    // Webhook routes are outside the IP whitelist — they authenticate
+    // via a notification token instead.
+    let app = Router::new()
+        .nest("/api/webhooks", webhook::router())
+        .merge(protected)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {
@@ -104,9 +115,6 @@ async fn main() -> anyhow::Result<()> {
                 })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .layer(axum::middleware::from_fn(move |req, next| {
-            ip_whitelist::check(whitelist.clone(), req, next)
-        }))
         .with_state(state);
 
     let addr = "0.0.0.0:1337";
