@@ -1,7 +1,7 @@
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "cargo-fmt", name = "cargo fmt", language = "system", entry = "cargo fmt --check", files = "\\.rs$", pass_filenames = false },
-  { id = "cargo-clippy", name = "cargo clippy", language = "system", entry = "cargo clippy -- -D warnings", files = "\\.rs$", pass_filenames = false },
-  { id = "cargo-test", name = "cargo test", language = "system", entry = "cargo test", files = "\\.rs$", pass_filenames = false },
+  { id = "cargo-fmt", name = "cargo fmt", language = "system", entry = "cargo fmt --manifest-path panopticon/Cargo.toml --check", files = "\\.rs$", pass_filenames = false },
+  { id = "cargo-clippy", name = "cargo clippy", language = "system", entry = "cargo clippy --manifest-path panopticon/Cargo.toml -- -D warnings", files = "\\.rs$", pass_filenames = false },
+  { id = "cargo-test", name = "cargo test", language = "system", entry = "cargo test --manifest-path panopticon/Cargo.toml", files = "\\.rs$", pass_filenames = false },
 ]

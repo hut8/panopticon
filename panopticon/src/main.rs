@@ -62,6 +62,14 @@ async fn main() -> anyhow::Result<()> {
 
     let (events_tx, _) = broadcast::channel::<ws::WsEvent>(64);
 
+    // Spawn email notifier on access events
+    let email_rx = events_tx.subscribe();
+    tokio::spawn(email::spawn_email_notifier(
+        email_rx,
+        db.clone(),
+        mailer.clone(),
+    ));
+
     let state = AppState {
         db,
         auth_store,

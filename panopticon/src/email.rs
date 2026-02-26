@@ -4,7 +4,11 @@ use lettre::{
     transport::smtp::authentication::Credentials,
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
 };
-use tracing::{error, info};
+use sqlx::PgPool;
+use tokio::sync::broadcast;
+use tracing::{error, info, warn};
+
+use crate::ws::WsEvent;
 
 #[derive(Clone)]
 pub struct Mailer {
@@ -58,6 +62,17 @@ impl Mailer {
         self.send(to_email, subject, &html).await
     }
 
+    pub async fn send_access_event_email(
+        &self,
+        to_email: &str,
+        subject: &str,
+        event_body: &str,
+    ) -> Result<()> {
+        let dashboard_url = format!("{}/", self.base_url);
+        let html = access_event_template(subject, event_body, &dashboard_url);
+        self.send(to_email, subject, &html).await
+    }
+
     async fn send(&self, to_email: &str, subject: &str, html_body: &str) -> Result<()> {
         let to: Mailbox = to_email
             .parse()
@@ -104,6 +119,16 @@ fn password_reset_template(reset_url: &str) -> String {
     )
 }
 
+fn access_event_template(heading: &str, body: &str, dashboard_url: &str) -> String {
+    email_template(
+        heading,
+        body,
+        "View Dashboard",
+        dashboard_url,
+        "You are receiving this because you enabled email notifications in Panopticon.",
+    )
+}
+
 fn email_template(
     heading: &str,
     body: &str,
@@ -135,4 +160,78 @@ fn email_template(
 </body>
 </html>"#
     )
+}
+
+pub async fn spawn_email_notifier(
+    mut rx: broadcast::Receiver<WsEvent>,
+    pool: PgPool,
+    mailer: Mailer,
+) {
+    info!("Email notifier started");
+    loop {
+        let event = match rx.recv().await {
+            Ok(e) => e,
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                warn!("Email notifier lagged, skipped {n} events");
+                continue;
+            }
+            Err(broadcast::error::RecvError::Closed) => {
+                info!("Email notifier shutting down (channel closed)");
+                return;
+            }
+        };
+
+        let (subject, body) = match &event {
+            WsEvent::Scan { tag_id, action, .. } => {
+                let subject = format!(
+                    "Access {}: {}",
+                    if action == "granted" {
+                        "Granted"
+                    } else {
+                        "Denied"
+                    },
+                    tag_id
+                );
+                let body = format!(
+                    "Card <strong>{}</strong> was <strong>{}</strong>.",
+                    tag_id, action
+                );
+                (subject, body)
+            }
+            WsEvent::LockState {
+                device_id,
+                lock_state,
+            } => {
+                let subject = format!("Lock {}: {}", lock_state, device_id);
+                let body = format!(
+                    "Device <strong>{}</strong> is now <strong>{}</strong>.",
+                    device_id, lock_state
+                );
+                (subject, body)
+            }
+            _ => continue,
+        };
+
+        let recipients: Vec<String> = match sqlx::query_scalar(
+            "SELECT email FROM users WHERE notify_email = TRUE AND is_approved = TRUE",
+        )
+        .fetch_all(&pool)
+        .await
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                error!("Failed to query notification recipients: {e}");
+                continue;
+            }
+        };
+
+        for email in recipients {
+            if let Err(e) = mailer
+                .send_access_event_email(&email, &subject, &body)
+                .await
+            {
+                error!(to = %email, "Failed to send access event email: {e}");
+            }
+        }
+    }
 }
