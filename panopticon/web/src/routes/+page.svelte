@@ -48,6 +48,8 @@
 		typeof Notification !== 'undefined' && Notification.permission === 'granted'
 	);
 	let emailNotifications: boolean = $state(false);
+	let pushNotifications: boolean = $state(false);
+	let pushLoading: boolean = $state(false);
 
 	async function checkUtec() {
 		try {
@@ -203,6 +205,88 @@
 		}
 	}
 
+	function urlBase64ToUint8Array(base64String: string): Uint8Array {
+		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+		const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+		const raw = atob(base64);
+		const arr = new Uint8Array(raw.length);
+		for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+		return arr;
+	}
+
+	let pushSupported = $state(
+		typeof navigator !== 'undefined' &&
+			'serviceWorker' in navigator &&
+			'PushManager' in window
+	);
+
+	async function getSwRegistration(): Promise<ServiceWorkerRegistration | null> {
+		if (!pushSupported) return null;
+		try {
+			return await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+		} catch {
+			return null;
+		}
+	}
+
+	async function initPushSubscription() {
+		const reg = await getSwRegistration();
+		if (!reg) return;
+		try {
+			const sub = await reg.pushManager.getSubscription();
+			pushNotifications = sub !== null;
+		} catch {
+			// ignore
+		}
+	}
+
+	async function togglePushNotifications() {
+		const reg = await getSwRegistration();
+		if (!reg) return;
+		pushLoading = true;
+		try {
+			await navigator.serviceWorker.ready;
+
+			if (pushNotifications) {
+				// Unsubscribe
+				const sub = await reg.pushManager.getSubscription();
+				if (sub) {
+					await fetch('/api/push/unsubscribe', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ endpoint: sub.endpoint })
+					});
+					await sub.unsubscribe();
+				}
+				pushNotifications = false;
+			} else {
+				// Subscribe
+				const res = await fetch('/api/push/vapid-key');
+				if (!res.ok) return;
+				const { key } = await res.json();
+				const sub = await reg.pushManager.subscribe({
+					userVisibleOnly: true,
+					applicationServerKey: urlBase64ToUint8Array(key)
+				});
+				const subJson = sub.toJSON();
+				await fetch('/api/push/subscribe', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						endpoint: sub.endpoint,
+						p256dh: subJson.keys?.p256dh ?? '',
+						auth: subJson.keys?.auth ?? ''
+					})
+				});
+				pushNotifications = true;
+			}
+		} catch {
+			// ignore
+		} finally {
+			pushLoading = false;
+		}
+	}
+
 	function fireBrowserNotification(title: string, body: string) {
 		if (typeof Notification === 'undefined') return;
 		if (Notification.permission !== 'granted') return;
@@ -337,6 +421,7 @@
 		loadCards();
 		loadScanLog();
 		loadNotificationPrefs();
+		initPushSubscription();
 		connectWebSocket();
 
 		return () => {
@@ -640,6 +725,34 @@
 								{browserNotifications ? 'On' : 'Off'}
 							</button>
 						</div>
+						<!-- Push notifications toggle -->
+						{#if pushSupported}
+							<div class="flex items-center justify-between">
+								<div>
+									<p class="text-sm text-surface-200">Push notifications</p>
+									<p class="text-xs text-surface-500">
+										{#if pushNotifications}
+											Enabled — works even when tab is closed
+										{:else}
+											Receive alerts when the browser is closed
+										{/if}
+									</p>
+								</div>
+								<button
+									class="btn btn-sm {pushNotifications
+										? 'preset-filled-primary-500'
+										: 'preset-outlined-surface-500'}"
+									disabled={pushLoading}
+									onclick={togglePushNotifications}
+								>
+									{#if pushLoading}
+										<span class="animate-pulse">...</span>
+									{:else}
+										{pushNotifications ? 'On' : 'Off'}
+									{/if}
+								</button>
+							</div>
+						{/if}
 						<!-- Email notifications toggle -->
 						<div class="flex items-center justify-between">
 							<div>
