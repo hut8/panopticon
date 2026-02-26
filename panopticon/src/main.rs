@@ -106,10 +106,13 @@ async fn main() -> anyhow::Result<()> {
                         .and_then(|s| s.split(',').next())
                         .map(|s| s.trim().to_string())
                         .unwrap_or_else(|| "-".into());
+                    // Log only the path (no query string) to avoid leaking
+                    // the webhook notification token.
+                    let path = request.uri().path();
                     tracing::info_span!(
                         "request",
                         method = %request.method(),
-                        uri = %request.uri(),
+                        uri = %path,
                         client_ip = %client_ip,
                     )
                 })
