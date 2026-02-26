@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use axum::{
     extract::State,
@@ -5,6 +7,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tokio::sync::broadcast;
@@ -89,6 +92,32 @@ struct SubscribeRequest {
     auth: String,
 }
 
+fn validate_push_endpoint(endpoint: &str) -> Result<(), ApiError> {
+    let url =
+        Url::parse(endpoint).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid endpoint URL"))?;
+    if url.scheme() != "https" {
+        return Err((StatusCode::BAD_REQUEST, "Endpoint must use HTTPS"));
+    }
+    let host = url
+        .host_str()
+        .ok_or((StatusCode::BAD_REQUEST, "Endpoint missing host"))?;
+    // Reject obviously private/local hosts
+    if host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host.ends_with(".local")
+        || host.starts_with("10.")
+        || host.starts_with("192.168.")
+        || host.starts_with("172.16.")
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Endpoint must not be a private address",
+        ));
+    }
+    Ok(())
+}
+
 async fn subscribe(
     user: AuthUser,
     State(state): State<AppState>,
@@ -98,6 +127,8 @@ async fn subscribe(
         .push_config
         .as_ref()
         .ok_or((StatusCode::NOT_FOUND, "Push notifications not configured"))?;
+
+    validate_push_endpoint(&body.endpoint)?;
 
     sqlx::query(
         "INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
@@ -174,7 +205,10 @@ pub async fn spawn_push_notifier(
     pool: PgPool,
     config: PushConfig,
 ) {
-    let http_client = reqwest::Client::new();
+    let http_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .expect("Failed to build HTTP client");
 
     info!("Push notifier started");
     loop {
@@ -267,8 +301,8 @@ pub async fn spawn_push_notifier(
             };
 
             // Build the HTTP request from the WebPushMessage
-            let endpoint = message.endpoint.to_string();
-            let mut req = http_client.post(&endpoint).header("TTL", message.ttl);
+            let endpoint_url = message.endpoint.to_string();
+            let mut req = http_client.post(&endpoint_url).header("TTL", message.ttl);
 
             if let Some(payload) = message.payload {
                 req = req
@@ -281,33 +315,37 @@ pub async fn spawn_push_notifier(
                 req = req.body(payload.content);
             }
 
-            match req.send().await {
-                Ok(resp) => {
-                    let status = resp.status();
-                    if status.is_success() {
-                        // ok
-                    } else if status == reqwest::StatusCode::GONE
-                        || status == reqwest::StatusCode::NOT_FOUND
-                    {
-                        warn!(endpoint = %row.endpoint, "Push endpoint stale ({status}), removing");
-                        let _ = sqlx::query("DELETE FROM push_subscriptions WHERE id = $1")
-                            .bind(row.id)
-                            .execute(&pool)
-                            .await;
-                    } else {
-                        let body_text = resp.text().await.unwrap_or_default();
-                        error!(
-                            endpoint = %row.endpoint,
-                            status = %status,
-                            body = %body_text,
-                            "Push delivery failed"
-                        );
+            let pool = pool.clone();
+            let endpoint = row.endpoint.clone();
+            tokio::spawn(async move {
+                match req.send().await {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        if status.is_success() {
+                            // ok
+                        } else if status == reqwest::StatusCode::GONE
+                            || status == reqwest::StatusCode::NOT_FOUND
+                        {
+                            warn!(endpoint = %endpoint, "Push endpoint stale ({status}), removing");
+                            let _ = sqlx::query("DELETE FROM push_subscriptions WHERE id = $1")
+                                .bind(row.id)
+                                .execute(&pool)
+                                .await;
+                        } else {
+                            let body_text = resp.text().await.unwrap_or_default();
+                            error!(
+                                endpoint = %endpoint,
+                                status = %status,
+                                body = %body_text,
+                                "Push delivery failed"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        error!(endpoint = %endpoint, "Push HTTP request failed: {e}");
                     }
                 }
-                Err(e) => {
-                    error!(endpoint = %row.endpoint, "Push HTTP request failed: {e}");
-                }
-            }
+            });
         }
     }
 }

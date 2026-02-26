@@ -214,10 +214,25 @@
 		return arr;
 	}
 
-	async function initPushSubscription() {
-		if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+	let pushSupported = $state(
+		typeof navigator !== 'undefined' &&
+			'serviceWorker' in navigator &&
+			'PushManager' in window
+	);
+
+	async function getSwRegistration(): Promise<ServiceWorkerRegistration | null> {
+		if (!pushSupported) return null;
 		try {
-			const reg = await navigator.serviceWorker.register('/sw.js');
+			return await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+		} catch {
+			return null;
+		}
+	}
+
+	async function initPushSubscription() {
+		const reg = await getSwRegistration();
+		if (!reg) return;
+		try {
 			const sub = await reg.pushManager.getSubscription();
 			pushNotifications = sub !== null;
 		} catch {
@@ -226,10 +241,10 @@
 	}
 
 	async function togglePushNotifications() {
-		if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+		const reg = await getSwRegistration();
+		if (!reg) return;
 		pushLoading = true;
 		try {
-			const reg = await navigator.serviceWorker.register('/sw.js');
 			await navigator.serviceWorker.ready;
 
 			if (pushNotifications) {
@@ -711,7 +726,7 @@
 							</button>
 						</div>
 						<!-- Push notifications toggle -->
-						{#if 'serviceWorker' in navigator && 'PushManager' in window}
+						{#if pushSupported}
 							<div class="flex items-center justify-between">
 								<div>
 									<p class="text-sm text-surface-200">Push notifications</p>
