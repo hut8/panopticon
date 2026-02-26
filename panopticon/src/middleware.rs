@@ -5,10 +5,9 @@ use axum::{
     Json,
 };
 use serde::Serialize;
-use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::session::extract_session_id_from_cookies;
+use crate::session::{extract_session_id_from_cookies, get_user_by_session};
 use crate::AppState;
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,21 +72,3 @@ impl FromRef<AppState> for AppState {
     }
 }
 
-async fn get_user_by_session(pool: &PgPool, session_id: &str) -> Option<AuthUser> {
-    let row: Option<(Uuid, String, bool, bool)> = sqlx::query_as(
-        "SELECT u.id, u.email, u.email_confirmed, u.is_approved \
-         FROM users u JOIN sessions s ON u.id = s.user_id \
-         WHERE s.id = $1 AND s.expires_at > now()",
-    )
-    .bind(session_id)
-    .fetch_optional(pool)
-    .await
-    .ok()?;
-
-    row.map(|(id, email, email_confirmed, is_approved)| AuthUser {
-        id,
-        email,
-        email_confirmed,
-        is_approved,
-    })
-}

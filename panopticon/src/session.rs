@@ -2,6 +2,9 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use rand::Rng;
 use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::middleware::AuthUser;
 
 const SESSION_COOKIE: &str = "panopticon_session";
 const SESSION_MAX_AGE_DAYS: i64 = 30;
@@ -52,6 +55,25 @@ pub fn extract_session_id_from_cookies(cookie_header: &str) -> Option<&str> {
         .map(|s| s.trim())
         .find(|s| s.starts_with(&format!("{SESSION_COOKIE}=")))
         .map(|s| &s[SESSION_COOKIE.len() + 1..])
+}
+
+pub(crate) async fn get_user_by_session(pool: &PgPool, session_id: &str) -> Option<AuthUser> {
+    let row: Option<(Uuid, String, bool, bool)> = sqlx::query_as(
+        "SELECT u.id, u.email, u.email_confirmed, u.is_approved \
+         FROM users u JOIN sessions s ON u.id = s.user_id \
+         WHERE s.id = $1 AND s.expires_at > now()",
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await
+    .ok()?;
+
+    row.map(|(id, email, email_confirmed, is_approved)| AuthUser {
+        id,
+        email,
+        email_confirmed,
+        is_approved,
+    })
 }
 
 /// Encode bytes as hex (avoids adding a hex crate dependency).
