@@ -40,6 +40,9 @@
 	let cards: AccessCard[] = $state([]);
 	let scanLog: ScanLogEntry[] = $state([]);
 
+	// Current user
+	let currentUserEmail: string | null = $state(null);
+
 	// Notification state
 	let browserNotifications: boolean = $state(
 		typeof Notification !== 'undefined' && Notification.permission === 'granted'
@@ -315,8 +318,21 @@
 		}
 	}
 
+	async function loadCurrentUser() {
+		try {
+			const res = await fetch('/api/auth/me');
+			if (res.ok) {
+				const data = await res.json();
+				currentUserEmail = data.email;
+			}
+		} catch {
+			// ignore
+		}
+	}
+
 	$effect(() => {
 		checkUtec();
+		loadCurrentUser();
 		loadSentinelMode();
 		loadCards();
 		loadScanLog();
@@ -346,19 +362,30 @@
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-3">
 				<h1 class="h2">Panopticon</h1>
-				<div
-					class="h-2.5 w-2.5 rounded-full {wsConnected
-						? 'bg-success-500'
-						: 'bg-surface-600 animate-pulse'}"
-					title={wsConnected ? 'Live — receiving updates' : 'Disconnected — reconnecting...'}
-				></div>
+				<span
+					class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium {wsConnected
+						? 'bg-success-500/15 text-success-400'
+						: 'bg-surface-700 text-surface-400 animate-pulse'}"
+				>
+					<span
+						class="h-1.5 w-1.5 rounded-full {wsConnected
+							? 'bg-success-500'
+							: 'bg-surface-500'}"
+					></span>
+					{wsConnected ? 'Connected' : 'Reconnecting'}
+				</span>
 			</div>
-			<button
-				class="text-sm text-surface-500 hover:text-surface-300 cursor-pointer"
-				onclick={handleLogout}
-			>
-				Sign out
-			</button>
+			<div class="flex items-center gap-3">
+				{#if currentUserEmail}
+					<span class="text-sm text-surface-400">{currentUserEmail}</span>
+				{/if}
+				<button
+					class="text-sm text-surface-500 hover:text-surface-300 cursor-pointer"
+					onclick={handleLogout}
+				>
+					Sign out
+				</button>
+			</div>
 		</div>
 
 		<!-- Two-column grid on desktop, single column on mobile -->
@@ -403,8 +430,22 @@
 
 					<!-- Devices -->
 					{#if devicesLoading}
-						<div class="card preset-filled-surface-900 p-6">
-							<p class="text-sm text-surface-400 animate-pulse">Loading locks...</p>
+						<div class="card preset-filled-surface-900 space-y-4 p-6 animate-pulse">
+							<!-- Name + status dot -->
+							<div class="flex items-center justify-between">
+								<div class="placeholder h-5 w-32 rounded"></div>
+								<div class="placeholder-circle h-2 w-2"></div>
+							</div>
+							<!-- Lock icon + state + battery -->
+							<div class="flex items-center justify-between">
+								<div class="flex items-center gap-3">
+									<div class="placeholder-circle h-10 w-10"></div>
+									<div class="placeholder h-4 w-16 rounded"></div>
+								</div>
+								<div class="placeholder h-4 w-10 rounded"></div>
+							</div>
+							<!-- Button -->
+							<div class="placeholder h-10 w-full rounded-lg"></div>
 						</div>
 					{:else if error}
 						<div class="card preset-filled-surface-900 space-y-3 p-6">
