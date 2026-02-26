@@ -9,6 +9,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::middleware::AuthUser;
+use crate::ws::WsEvent;
 use crate::AppState;
 
 type ApiError = (StatusCode, &'static str);
@@ -162,15 +163,45 @@ async fn handle_scan(
     };
 
     // 6. Log to scan_log
-    sqlx::query("INSERT INTO scan_log (tag_id, action) VALUES ($1, $2)")
-        .bind(&req.tag_id)
-        .bind(action)
-        .execute(&state.db)
-        .await
-        .map_err(|e| {
-            error!("Failed to log scan: {e:#}");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
-        })?;
+    let scan_row: (Uuid, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+        "INSERT INTO scan_log (tag_id, action) VALUES ($1, $2) RETURNING id, created_at",
+    )
+    .bind(&req.tag_id)
+    .bind(action)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| {
+        error!("Failed to log scan: {e:#}");
+        (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+    })?;
+
+    let _ = state.events.send(WsEvent::Scan {
+        tag_id: req.tag_id.clone(),
+        action: action.to_string(),
+        created_at: scan_row.1.to_rfc3339(),
+    });
+
+    // 7. If enrolled, also broadcast the new card
+    if action == "enrolled" {
+        let card: Option<(Uuid, String, Option<String>, chrono::DateTime<chrono::Utc>)> =
+            sqlx::query_as(
+                "SELECT id, tag_id, label, created_at FROM access_cards WHERE tag_id = $1",
+            )
+            .bind(&req.tag_id)
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten();
+
+        if let Some((id, tag_id, label, created_at)) = card {
+            let _ = state.events.send(WsEvent::CardAdded {
+                id,
+                tag_id,
+                label,
+                created_at: created_at.to_rfc3339(),
+            });
+        }
+    }
 
     Ok(Json(ScanResponse {
         action: action.to_string(),
@@ -211,6 +242,10 @@ async fn set_mode(
         })?;
 
     info!(mode = %req.mode, "Sentinel mode changed");
+
+    let _ = state.events.send(WsEvent::ModeChanged {
+        mode: req.mode.clone(),
+    });
 
     Ok(Json(ModeResponse { mode: req.mode }))
 }
@@ -261,6 +296,9 @@ async fn remove_card(
     }
 
     info!(%id, "Card removed");
+
+    let _ = state.events.send(WsEvent::CardRemoved { id });
+
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -9,6 +9,7 @@ use tracing::error;
 
 use crate::middleware::AuthUser;
 use crate::utec::UTec;
+use crate::ws::WsEvent;
 use crate::AppState;
 
 type ApiError = (StatusCode, &'static str);
@@ -104,6 +105,13 @@ async fn lock_device(
         .find(|s| s.id == id)
         .and_then(|s| s.lock_state());
 
+    if let Some(ref ls) = lock_state {
+        let _ = state.events.send(WsEvent::LockState {
+            device_id: id,
+            lock_state: ls.clone(),
+        });
+    }
+
     Ok(Json(LockActionResponse {
         success: true,
         lock_state,
@@ -136,6 +144,13 @@ async fn unlock_device(
         .iter()
         .find(|s| s.id == id)
         .and_then(|s| s.lock_state());
+
+    if let Some(ref ls) = lock_state {
+        let _ = state.events.send(WsEvent::LockState {
+            device_id: id,
+            lock_state: ls.clone(),
+        });
+    }
 
     Ok(Json(LockActionResponse {
         success: true,

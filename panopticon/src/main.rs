@@ -9,6 +9,7 @@ mod oauth;
 mod sentinel;
 mod session;
 pub mod utec;
+mod ws;
 
 use axum::{
     http::{HeaderMap, StatusCode, Uri},
@@ -18,6 +19,7 @@ use axum::{
 use include_dir::{include_dir, Dir};
 use mime_guess::from_path;
 use sqlx::PgPool;
+use tokio::sync::broadcast;
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::{info, Level};
 
@@ -33,6 +35,7 @@ pub struct AppState {
     pub auth_store: AuthStore,
     pub mailer: Mailer,
     pub sentinel_secret: String,
+    pub events: broadcast::Sender<ws::WsEvent>,
 }
 
 #[tokio::main]
@@ -57,17 +60,21 @@ async fn main() -> anyhow::Result<()> {
     let sentinel_secret =
         std::env::var("SENTINEL_SECRET").unwrap_or_else(|_| "changeme".to_string());
 
+    let (events_tx, _) = broadcast::channel::<ws::WsEvent>(64);
+
     let state = AppState {
         db,
         auth_store,
         mailer,
         sentinel_secret,
+        events: events_tx,
     };
 
     let app = Router::new()
         .nest("/api/auth", email_auth::router())
         .nest("/api/sentinel", sentinel::router())
         .nest("/api", api::router())
+        .nest("/api", ws::router())
         .nest("/auth", oauth::router())
         .fallback(handle_static_file)
         .layer(
