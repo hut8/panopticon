@@ -180,3 +180,7 @@ But the Query response only returns `st.healthCheck`, `st.lock`, and `st.battery
   }]
 }
 ```
+
+### 3. `st.doorSensor` documentation describes the wrong capability
+
+The U-Tec docs describe `st.doorSensor` as "An indication of the status of the battery", which is clearly a copy-paste error from `st.batteryLevel`. This is the capability we need for door open/closed state from `utec-lock-sensor` devices (see bug #2), but the incorrect documentation makes it unclear what the actual payload looks like.
