@@ -157,10 +157,7 @@ async fn callback(State(state): State<AppState>, Query(params): Query<CallbackPa
 
     // Register webhook with U-Tec (after persisting, so we can always
     // validate notifications even if this call fails).
-    let webhook_url = format!(
-        "{}/api/webhooks/utec?access_token={}",
-        REDIRECT_HOST, notification_token
-    );
+    let webhook_url = format!("{}/api/webhooks/utec", REDIRECT_HOST);
     match client
         .set_notification_url(&webhook_url, &notification_token)
         .await
