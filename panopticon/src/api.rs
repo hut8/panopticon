@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use crate::middleware::AuthUser;
@@ -29,11 +29,25 @@ struct LockActionResponse {
     lock_state: Option<String>,
 }
 
+#[derive(Serialize)]
+struct NotificationPrefs {
+    email: bool,
+}
+
+#[derive(Deserialize)]
+struct UpdateNotificationPrefs {
+    email: bool,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/devices", get(list_devices))
         .route("/devices/{id}/lock", post(lock_device))
         .route("/devices/{id}/unlock", post(unlock_device))
+        .route(
+            "/notifications",
+            get(get_notifications).put(update_notifications),
+        )
 }
 
 async fn get_client(state: &AppState) -> Result<UTec, ApiError> {
@@ -65,11 +79,29 @@ async fn list_devices(
         .iter()
         .map(|lock| {
             let device_states = states.iter().find(|s| s.id == lock.id);
+            let battery_level = device_states.and_then(|s| s.battery_level()).map(|raw| {
+                // Normalize battery level to 0-100% using the device's
+                // batteryLevelRange from discovery (e.g. min=1, max=5).
+                let (min, max) = lock
+                    .attributes
+                    .as_ref()
+                    .and_then(|a| a.get("batteryLevelRange"))
+                    .map(|r| {
+                        let min = r.get("min").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let max = r.get("max").and_then(|v| v.as_u64()).unwrap_or(100);
+                        (min, max)
+                    })
+                    .unwrap_or((0, 100));
+                if max <= min {
+                    return raw;
+                }
+                ((raw.saturating_sub(min)) * 100) / (max - min)
+            });
             DeviceResponse {
                 id: lock.id.clone(),
                 name: lock.name.clone(),
                 lock_state: device_states.and_then(|s| s.lock_state()),
-                battery_level: device_states.and_then(|s| s.battery_level()),
+                battery_level,
                 online: device_states.is_some_and(|s| s.is_online()),
             }
         })
@@ -156,4 +188,44 @@ async fn unlock_device(
         success: true,
         lock_state,
     }))
+}
+
+async fn get_notifications(
+    user: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<NotificationPrefs>, ApiError> {
+    let email: bool = sqlx::query_scalar("SELECT notify_email FROM users WHERE id = $1")
+        .bind(user.id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| {
+            error!("Failed to fetch notification prefs: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch preferences",
+            )
+        })?;
+
+    Ok(Json(NotificationPrefs { email }))
+}
+
+async fn update_notifications(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<UpdateNotificationPrefs>,
+) -> Result<Json<NotificationPrefs>, ApiError> {
+    sqlx::query("UPDATE users SET notify_email = $1 WHERE id = $2")
+        .bind(body.email)
+        .bind(user.id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| {
+            error!("Failed to update notification prefs: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to update preferences",
+            )
+        })?;
+
+    Ok(Json(NotificationPrefs { email: body.email }))
 }

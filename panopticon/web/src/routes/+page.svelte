@@ -40,6 +40,12 @@
 	let cards: AccessCard[] = $state([]);
 	let scanLog: ScanLogEntry[] = $state([]);
 
+	// Notification state
+	let browserNotifications: boolean = $state(
+		typeof Notification !== 'undefined' && Notification.permission === 'granted'
+	);
+	let emailNotifications: boolean = $state(false);
+
 	async function checkUtec() {
 		try {
 			const res = await fetch('/auth/status');
@@ -160,6 +166,46 @@
 		}
 	}
 
+	async function requestBrowserNotifications() {
+		if (typeof Notification === 'undefined') return;
+		const result = await Notification.requestPermission();
+		browserNotifications = result === 'granted';
+	}
+
+	async function loadNotificationPrefs() {
+		try {
+			const res = await fetch('/api/notifications');
+			if (res.ok) {
+				const data = await res.json();
+				emailNotifications = data.email;
+			}
+		} catch {
+			// ignore
+		}
+	}
+
+	async function toggleEmailNotifications() {
+		const newValue = !emailNotifications;
+		try {
+			const res = await fetch('/api/notifications', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email: newValue })
+			});
+			if (res.ok) {
+				emailNotifications = newValue;
+			}
+		} catch {
+			// ignore
+		}
+	}
+
+	function fireBrowserNotification(title: string, body: string) {
+		if (typeof Notification === 'undefined') return;
+		if (Notification.permission !== 'granted') return;
+		new Notification(title, { body, icon: '/favicon.png' });
+	}
+
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString(undefined, {
 			month: 'short',
@@ -217,17 +263,24 @@
 
 	function handleWsMessage(msg: { type: string; data: Record<string, unknown> }) {
 		switch (msg.type) {
-			case 'scan':
+			case 'scan': {
+				const scanAction = msg.data.action as string;
+				const scanTagId = msg.data.tag_id as string;
 				scanLog = [
 					{
 						id: crypto.randomUUID(),
-						tag_id: msg.data.tag_id as string,
-						action: msg.data.action as string,
+						tag_id: scanTagId,
+						action: scanAction,
 						created_at: msg.data.created_at as string
 					},
 					...scanLog
 				];
+				fireBrowserNotification(
+					`Access ${scanAction === 'granted' ? 'Granted' : 'Denied'}`,
+					`Card ${scanTagId} — ${scanAction}`
+				);
 				break;
+			}
 			case 'mode_changed':
 				sentinelMode = msg.data.mode as string;
 				break;
@@ -246,13 +299,19 @@
 			case 'card_removed':
 				cards = cards.filter((c) => c.id !== (msg.data.id as string));
 				break;
-			case 'lock_state':
+			case 'lock_state': {
+				const lsDeviceId = msg.data.device_id as string;
+				const lsState = msg.data.lock_state as string;
 				devices = devices.map((d) =>
-					d.id === (msg.data.device_id as string)
-						? { ...d, lock_state: msg.data.lock_state as string }
-						: d
+					d.id === lsDeviceId ? { ...d, lock_state: lsState } : d
+				);
+				const lsDevice = devices.find((d) => d.id === lsDeviceId);
+				fireBrowserNotification(
+					`Lock ${lsState}`,
+					`${lsDevice?.name ?? lsDeviceId} is now ${lsState}`
 				);
 				break;
+			}
 		}
 	}
 
@@ -261,6 +320,7 @@
 		loadSentinelMode();
 		loadCards();
 		loadScanLog();
+		loadNotificationPrefs();
 		connectWebSocket();
 
 		return () => {
@@ -508,6 +568,55 @@
 							</p>
 						</div>
 					{/if}
+				</div>
+
+				<!-- Notifications -->
+				<div class="card preset-filled-surface-900 space-y-4 p-6">
+					<h2 class="h5">Notifications</h2>
+					<div class="space-y-3">
+						<!-- Browser notifications toggle -->
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm text-surface-200">Browser notifications</p>
+								<p class="text-xs text-surface-500">
+									{#if typeof Notification === 'undefined'}
+										Not supported in this browser
+									{:else if browserNotifications}
+										Enabled
+									{:else}
+										Click to enable desktop alerts
+									{/if}
+								</p>
+							</div>
+							<button
+								class="btn btn-sm {browserNotifications
+									? 'preset-filled-primary-500'
+									: 'preset-outlined-surface-500'}"
+								disabled={typeof Notification === 'undefined' ||
+									Notification.permission === 'denied'}
+								onclick={requestBrowserNotifications}
+							>
+								{browserNotifications ? 'On' : 'Off'}
+							</button>
+						</div>
+						<!-- Email notifications toggle -->
+						<div class="flex items-center justify-between">
+							<div>
+								<p class="text-sm text-surface-200">Email notifications</p>
+								<p class="text-xs text-surface-500">
+									Receive an email on every access event
+								</p>
+							</div>
+							<button
+								class="btn btn-sm {emailNotifications
+									? 'preset-filled-primary-500'
+									: 'preset-outlined-surface-500'}"
+								onclick={toggleEmailNotifications}
+							>
+								{emailNotifications ? 'On' : 'Off'}
+							</button>
+						</div>
+					</div>
 				</div>
 			</div>
 

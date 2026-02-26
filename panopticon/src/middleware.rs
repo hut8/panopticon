@@ -71,4 +71,3 @@ impl FromRef<AppState> for AppState {
         input.clone()
     }
 }
-

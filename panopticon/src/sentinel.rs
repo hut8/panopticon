@@ -98,13 +98,14 @@ async fn handle_scan(
     }
 
     // 3. Read current mode
-    let mode: String = sqlx::query_scalar("SELECT value FROM system_config WHERE key = 'sentinel_mode'")
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| {
-            error!("Failed to read sentinel mode: {e:#}");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
-        })?;
+    let mode: String =
+        sqlx::query_scalar("SELECT value FROM system_config WHERE key = 'sentinel_mode'")
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| {
+                error!("Failed to read sentinel mode: {e:#}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+            })?;
 
     let action = match mode.as_str() {
         "enroll" => {
@@ -140,8 +141,12 @@ async fn handle_scan(
                         Ok(locks) => {
                             if let Some(lock) = locks.first() {
                                 match client.unlock(lock).await {
-                                    Ok(_) => info!(tag_id = %req.tag_id, lock = %lock.name, "Door unlocked"),
-                                    Err(e) => error!(tag_id = %req.tag_id, "Failed to unlock: {e:#}"),
+                                    Ok(_) => {
+                                        info!(tag_id = %req.tag_id, lock = %lock.name, "Door unlocked")
+                                    }
+                                    Err(e) => {
+                                        error!(tag_id = %req.tag_id, "Failed to unlock: {e:#}")
+                                    }
                                 }
                             } else {
                                 warn!("No locks found on U-Tec account");
@@ -212,13 +217,14 @@ async fn get_mode(
     _user: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<ModeResponse>, ApiError> {
-    let mode: String = sqlx::query_scalar("SELECT value FROM system_config WHERE key = 'sentinel_mode'")
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| {
-            error!("Failed to read mode: {e:#}");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
-        })?;
+    let mode: String =
+        sqlx::query_scalar("SELECT value FROM system_config WHERE key = 'sentinel_mode'")
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| {
+                error!("Failed to read mode: {e:#}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+            })?;
 
     Ok(Json(ModeResponse { mode }))
 }
