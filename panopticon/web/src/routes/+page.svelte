@@ -41,6 +41,7 @@
 	let loading = $state(true);
 	let devicesLoading = $state(false);
 	let actionInFlight: Record<string, boolean> = $state({});
+	let pendingAction: Record<string, 'locking' | 'unlocking'> = $state({});
 	let lockUsers: Record<string, LockUser[]> = $state({});
 	let lockUsersLoading: Record<string, boolean> = $state({});
 	let error: string | null = $state(null);
@@ -121,6 +122,8 @@
 				devices = devices.map((d) =>
 					d.id === device.id ? { ...d, lock_state: result.lock_state } : d
 				);
+			} else {
+				pendingAction = { ...pendingAction, [device.id]: action === 'lock' ? 'locking' : 'unlocking' };
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : `Failed to ${action}`;
@@ -424,6 +427,8 @@
 				devices = devices.map((d) =>
 					d.id === lsDeviceId ? { ...d, lock_state: lsState } : d
 				);
+				const { [lsDeviceId]: _, ...remainingPending } = pendingAction;
+				pendingAction = remainingPending;
 				const lsDevice = devices.find((d) => d.id === lsDeviceId);
 				fireBrowserNotification(
 					`Lock ${lsState}`,
@@ -599,7 +604,28 @@
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-3">
 										<!-- Lock state indicator -->
-										{#if device.lock_state === 'locked'}
+										{#if pendingAction[device.id]}
+											<div
+												class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-500/15"
+											>
+												<svg
+													class="h-5 w-5 text-primary-400 animate-spin"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+													stroke-width="2"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+													/>
+												</svg>
+											</div>
+											<span class="text-sm font-medium text-primary-400 animate-pulse">
+												{pendingAction[device.id] === 'locking' ? 'Locking...' : 'Unlocking...'}
+											</span>
+										{:else if device.lock_state === 'locked'}
 											<div
 												class="flex h-10 w-10 items-center justify-center rounded-full bg-success-500/15"
 											>
@@ -685,7 +711,7 @@
 									class="btn btn-base w-full {device.lock_state === 'locked'
 										? 'preset-outlined-warning-500'
 										: 'preset-outlined-success-500'}"
-									disabled={actionInFlight[device.id] || !device.online}
+									disabled={actionInFlight[device.id] || pendingAction[device.id] || !device.online}
 									onclick={() => toggleLock(device)}
 								>
 									{#if actionInFlight[device.id]}
