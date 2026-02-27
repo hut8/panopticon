@@ -193,6 +193,29 @@ In practice, no asynchronous response is ever sent back. You must make a second 
 
 Additionally, the capability is documented as `st.DeferredResponse` but the API actually returns `st.deferredResponse` (lowercase `d`).
 
-### 5. Developer support
+### 5. `st.lockUser` type values are wrong in the documentation
+
+The [documentation](https://doc.api.u-tec.com/#4f860cbb-5470-41f2-85e3-b868e168db83) defines user types as `0: Normal User, 2: Temporary User, 3: Admin`. The actual API returns different values:
+
+| Documented | Actual |
+|------------|--------|
+| `0` = Normal User | Not observed |
+| `2` = Temporary User | Not observed |
+| `3` = Admin | `3` = Normal User |
+| (not documented) | `1` = Admin |
+
+Observed response:
+```json
+{
+  "users": [
+    { "id": 1000000001, "name": "Alice", "type": 1, "status": 1, "sync_status": 1 },
+    { "id": 1000000002, "name": "Bob", "type": 3, "status": 1, "sync_status": 1 }
+  ]
+}
+```
+
+Here `type: 1` is the account owner (admin) and `type: 3` is a normal user — the opposite of what the docs say.
+
+### 6. Developer support
 
 The correct URL for xthings developer support requests is: https://developer.xthings.com/hc/en-us/requests/new

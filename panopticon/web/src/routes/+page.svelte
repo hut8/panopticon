@@ -715,9 +715,9 @@
 											{#each lockUsers[device.id] as user (user.id)}
 												<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
 													<span class="text-sm text-surface-200">{user.name}</span>
-													<!-- U-Tec user types: 1 = Admin (owner), 2 = User (guest/regular) -->
+													<!-- U-Tec user types: 1 = Admin, 3 = User (see bug #6 in README) -->
 													<span class="text-xs text-surface-500">
-														{user.user_type === 1 ? 'Admin' : user.user_type === 2 ? 'User' : `Type ${user.user_type}`}
+														{user.user_type === 1 ? 'Admin' : user.user_type === 3 ? 'User' : `Type ${user.user_type}`}
 													</span>
 												</div>
 											{/each}
