@@ -72,19 +72,22 @@
 		}
 	}
 
-	async function loadDevices() {
+	async function loadDevices(): Promise<DeviceInfo[]> {
 		devicesLoading = true;
 		error = null;
 		try {
 			const res = await fetch('/api/devices');
 			if (res.status === 503) {
 				devices = [];
-				return;
+				return [];
 			}
 			if (!res.ok) throw new Error('Failed to load devices');
-			devices = await res.json();
+			const loaded: DeviceInfo[] = await res.json();
+			devices = loaded;
+			return loaded;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load devices';
+			return [];
 		} finally {
 			devicesLoading = false;
 		}
@@ -96,9 +99,11 @@
 			const res = await fetch(`/api/devices/${deviceId}/users`);
 			if (res.ok) {
 				lockUsers = { ...lockUsers, [deviceId]: await res.json() };
+			} else {
+				console.error(`Failed to load lock users for ${deviceId}: ${res.status}`);
 			}
-		} catch {
-			// ignore
+		} catch (e) {
+			console.error(`Failed to load lock users for ${deviceId}:`, e);
 		} finally {
 			lockUsersLoading = { ...lockUsersLoading, [deviceId]: false };
 		}
@@ -458,8 +463,8 @@
 
 	$effect(() => {
 		if (utecStatus?.authenticated) {
-			loadDevices().then(() => {
-				for (const d of devices) {
+			loadDevices().then((loaded) => {
+				for (const d of loaded) {
 					loadLockUsers(d.id);
 				}
 			});
@@ -700,17 +705,22 @@
 									<div class="border-t border-surface-700 pt-3">
 										<p class="text-xs text-surface-500 animate-pulse">Loading users...</p>
 									</div>
-								{:else if lockUsers[device.id]?.length}
+								{:else if lockUsers[device.id] != null}
 									<div class="border-t border-surface-700 pt-3 space-y-2">
 										<h4 class="text-xs font-medium text-surface-400 uppercase tracking-wide">Lock Users</h4>
-										{#each lockUsers[device.id] as user (user.id)}
-											<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
-												<span class="text-sm text-surface-200">{user.name}</span>
-												<span class="text-xs text-surface-500">
-													{user.user_type === 1 ? 'Admin' : user.user_type === 2 ? 'User' : `Type ${user.user_type}`}
-												</span>
-											</div>
-										{/each}
+										{#if lockUsers[device.id].length === 0}
+											<p class="text-xs text-surface-500">No users configured.</p>
+										{:else}
+											{#each lockUsers[device.id] as user (user.id)}
+												<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
+													<span class="text-sm text-surface-200">{user.name}</span>
+													<!-- U-Tec user types: 1 = Admin (owner), 2 = User (guest/regular) -->
+													<span class="text-xs text-surface-500">
+														{user.user_type === 1 ? 'Admin' : user.user_type === 2 ? 'User' : `Type ${user.user_type}`}
+													</span>
+												</div>
+											{/each}
+										{/if}
 									</div>
 								{/if}
 							</div>

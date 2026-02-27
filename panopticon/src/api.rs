@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use crate::middleware::AuthUser;
 use crate::utec::{Device, DeviceWithStates, LockUser, UTec};
@@ -172,6 +172,9 @@ async fn unlock_device(
     }))
 }
 
+/// Maximum seconds we'll wait for a deferred lock response before giving up.
+const MAX_DEFERRED_WAIT_SECS: u64 = 60;
+
 /// Handle a lock/unlock command response: if the lock state is immediately
 /// available, broadcast it via WebSocket. If the API returns a deferred
 /// response (st.deferredResponse), spawn a background task that waits the
@@ -195,6 +198,16 @@ fn handle_lock_response(
         .and_then(|s| s.get_state("st.deferredResponse", "seconds"))
         .and_then(|s| s.value.as_u64())
     {
+        let seconds = if seconds > MAX_DEFERRED_WAIT_SECS {
+            warn!(
+                device_id,
+                seconds, "Deferred wait exceeds maximum, capping at {MAX_DEFERRED_WAIT_SECS}s"
+            );
+            MAX_DEFERRED_WAIT_SECS
+        } else {
+            seconds
+        };
+
         let state = state.clone();
         let device_id = device_id.to_string();
         let device = device.clone();
@@ -214,6 +227,8 @@ fn handle_lock_response(
                             device_id,
                             lock_state: ls,
                         });
+                    } else {
+                        warn!(device_id, "Deferred query returned no lock state");
                     }
                 }
                 Err(e) => {
@@ -224,6 +239,11 @@ fn handle_lock_response(
                 }
             }
         });
+    } else {
+        warn!(
+            device_id,
+            "Lock command response contained neither lock state nor deferred response"
+        );
     }
 
     lock_state
