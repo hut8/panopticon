@@ -36,6 +36,7 @@
 	}
 
 	let utecStatus: UtecStatus | null = $state(null);
+	let isUtecAuthenticated = $derived(utecStatus?.authenticated ?? false);
 	let devices: DeviceInfo[] = $state([]);
 	let loading = $state(true);
 	let devicesLoading = $state(false);
@@ -462,7 +463,7 @@
 	});
 
 	$effect(() => {
-		if (utecStatus?.authenticated) {
+		if (isUtecAuthenticated) {
 			loadDevices().then((loaded) => {
 				for (const d of loaded) {
 					loadLockUsers(d.id);
