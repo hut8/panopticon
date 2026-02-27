@@ -3,6 +3,7 @@ mod auth_store;
 mod db;
 mod email;
 mod email_auth;
+mod geo_access;
 mod ip_whitelist;
 mod middleware;
 mod oauth;
@@ -61,6 +62,8 @@ async fn main() -> anyhow::Result<()> {
     let mailer = Mailer::new()?;
     let push_config = PushConfig::new()?;
     let whitelist = ip_whitelist::load_whitelist()?;
+    let geo = geo_access::GeoAccess::init().await;
+    geo.spawn_gpsd_task();
 
     let sentinel_secret =
         std::env::var("SENTINEL_SECRET").unwrap_or_else(|_| "changeme".to_string());
@@ -100,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/auth", oauth::router())
         .fallback(handle_static_file)
         .layer(axum::middleware::from_fn(move |req, next| {
-            ip_whitelist::check(whitelist.clone(), req, next)
+            ip_whitelist::check(whitelist.clone(), geo.clone(), req, next)
         }));
 
     // Webhook routes are outside the IP whitelist — they authenticate
