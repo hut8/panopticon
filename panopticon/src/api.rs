@@ -1,12 +1,13 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, warn};
+use uuid::Uuid;
 
 use crate::middleware::AuthUser;
 use crate::utec::{Device, DeviceWithStates, LockUser, UTec};
@@ -50,6 +51,9 @@ pub fn router() -> Router<AppState> {
             "/notifications",
             get(get_notifications).put(update_notifications),
         )
+        .route("/admin/pending-users", get(list_pending_users))
+        .route("/admin/users/{id}/approve", post(approve_user))
+        .route("/admin/users/{id}", delete(delete_user))
 }
 
 async fn get_client(state: &AppState) -> Result<UTec, ApiError> {
@@ -312,4 +316,104 @@ async fn update_notifications(
         })?;
 
     Ok(Json(NotificationPrefs { email: body.email }))
+}
+
+// ── Admin: pending users ─────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct PendingUser {
+    id: Uuid,
+    email: String,
+    email_confirmed: bool,
+    created_at: String,
+}
+
+fn require_approved(user: &AuthUser) -> Result<(), ApiError> {
+    if !user.is_approved {
+        return Err((StatusCode::FORBIDDEN, "Not authorized"));
+    }
+    Ok(())
+}
+
+async fn list_pending_users(
+    user: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<PendingUser>>, ApiError> {
+    require_approved(&user)?;
+
+    let rows: Vec<(Uuid, String, bool, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT id, email, email_confirmed, created_at FROM users WHERE is_approved = FALSE ORDER BY created_at ASC",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| {
+        error!("Failed to fetch pending users: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to fetch pending users",
+        )
+    })?;
+
+    let users = rows
+        .into_iter()
+        .map(|(id, email, email_confirmed, created_at)| PendingUser {
+            id,
+            email,
+            email_confirmed,
+            created_at: created_at.to_rfc3339(),
+        })
+        .collect();
+
+    Ok(Json(users))
+}
+
+async fn approve_user(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    require_approved(&user)?;
+
+    let email: Option<String> = sqlx::query_scalar(
+        "UPDATE users SET is_approved = TRUE WHERE id = $1 AND is_approved = FALSE RETURNING email",
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        error!("Failed to approve user: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to approve user")
+    })?;
+
+    let email = email.ok_or((StatusCode::NOT_FOUND, "User not found or already approved"))?;
+
+    if let Err(e) = state.mailer.send_approval_email(&email).await {
+        error!(to = %email, "Failed to send approval email: {e}");
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_user(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    require_approved(&user)?;
+
+    // Sessions are cleaned up via ON DELETE CASCADE.
+    let result = sqlx::query("DELETE FROM users WHERE id = $1 AND is_approved = FALSE")
+        .bind(id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| {
+            error!("Failed to delete user: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete user")
+        })?;
+
+    if result.rows_affected() == 0 {
+        return Err((StatusCode::NOT_FOUND, "User not found or already approved"));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }
