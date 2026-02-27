@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 /// Cached GPS position (latitude, longitude).
 type GpsPosition = Arc<RwLock<Option<(f64, f64)>>>;
@@ -64,6 +64,11 @@ impl GeoAccess {
         }
     }
 
+    /// Returns true if the GeoIP database is loaded and geo checks are possible.
+    pub fn is_enabled(&self) -> bool {
+        self.reader.is_some()
+    }
+
     /// Spawn a background task that connects to gpsd and maintains the cached
     /// GPS position. Reconnects with 10s backoff on failure.
     pub fn spawn_gpsd_task(&self) {
@@ -72,9 +77,18 @@ impl GeoAccess {
         let port = self.gpsd_port;
 
         tokio::spawn(async move {
+            let mut first_failure = true;
             loop {
                 if let Err(e) = gpsd_session(&host, port, &position).await {
-                    warn!(error = %e, "gpsd connection lost");
+                    if first_failure {
+                        warn!(error = %e, "gpsd connection failed");
+                        first_failure = false;
+                    } else {
+                        debug!(error = %e, "gpsd reconnect failed");
+                    }
+                } else {
+                    // Successful session ended cleanly — next failure is notable again.
+                    first_failure = true;
                 }
                 // Clear position on disconnect — no stale data.
                 *position.write().await = None;
@@ -120,18 +134,35 @@ impl GeoAccess {
 
 const GEOIP_DB_URL: &str = "https://cdn.jsdelivr.net/npm/geolite2-city/GeoLite2-City.mmdb.gz";
 
-/// Download and decompress the GeoLite2-City database.
+/// Maximum compressed download size (64 MiB).
+const MAX_COMPRESSED_BYTES: usize = 64 * 1024 * 1024;
+
+/// Download and decompress the GeoLite2-City database. Writes to a temp file
+/// and atomically renames on success to avoid leaving a corrupt DB on disk.
 async fn download_geoip_db(dest: &str) -> anyhow::Result<()> {
     use flate2::read::GzDecoder;
     use std::io::Read;
+    use std::time::Duration;
 
-    let response = reqwest::get(GEOIP_DB_URL).await?;
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(120))
+        .build()?;
+
+    let response = client.get(GEOIP_DB_URL).send().await?;
     let status = response.status();
     if !status.is_success() {
         anyhow::bail!("HTTP {status} from GeoIP download");
     }
 
     let compressed = response.bytes().await?;
+    if compressed.len() > MAX_COMPRESSED_BYTES {
+        anyhow::bail!(
+            "Compressed GeoIP database too large ({} bytes, max {})",
+            compressed.len(),
+            MAX_COMPRESSED_BYTES
+        );
+    }
     info!(
         bytes = compressed.len(),
         "Downloaded GeoIP database (compressed)"
@@ -143,11 +174,16 @@ async fn download_geoip_db(dest: &str) -> anyhow::Result<()> {
     decoder.read_to_end(&mut decompressed)?;
 
     // Ensure parent directory exists.
-    if let Some(parent) = Path::new(dest).parent() {
+    let dest_path = Path::new(dest);
+    if let Some(parent) = dest_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
-    std::fs::write(dest, &decompressed)?;
+    // Write to a temp file then atomically rename to avoid corrupt DB on
+    // interrupted writes.
+    let tmp_path = dest_path.with_extension("mmdb.tmp");
+    std::fs::write(&tmp_path, &decompressed)?;
+    std::fs::rename(&tmp_path, dest_path)?;
     info!(path = %dest, bytes = decompressed.len(), "Wrote GeoIP database");
 
     Ok(())
@@ -190,7 +226,7 @@ async fn gpsd_session(host: &str, port: u16, position: &GpsPosition) -> anyhow::
         if let (Some(lat), Some(lon)) = (lat, lon) {
             let mut pos = position.write().await;
             *pos = Some((lat, lon));
-            info!(lat, lon, "GPS position updated");
+            debug!(lat, lon, "GPS position updated");
         }
     }
 
