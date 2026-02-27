@@ -11,6 +11,7 @@ use ipnet::IpNet;
 use tracing::{info, warn};
 
 use crate::auth_store::resolve_auth_path;
+use crate::geo_access::GeoAccess;
 
 /// Load the IP whitelist from `ip_whitelist.txt` in the same directory as `auth.json`.
 pub fn load_whitelist() -> anyhow::Result<Arc<Vec<IpNet>>> {
@@ -47,8 +48,13 @@ pub fn load_whitelist() -> anyhow::Result<Arc<Vec<IpNet>>> {
     Ok(Arc::new(entries))
 }
 
-/// Middleware that rejects requests from IPs not in the whitelist.
-pub async fn check(whitelist: Arc<Vec<IpNet>>, req: Request, next: Next) -> Response {
+/// Middleware that rejects requests from IPs not in the whitelist or geo radius.
+pub async fn check(
+    whitelist: Arc<Vec<IpNet>>,
+    geo: GeoAccess,
+    req: Request,
+    next: Next,
+) -> Response {
     let client_ip = req
         .headers()
         .get("x-forwarded-for")
@@ -58,12 +64,19 @@ pub async fn check(whitelist: Arc<Vec<IpNet>>, req: Request, next: Next) -> Resp
         .unwrap_or_else(|| "-".into());
 
     if let Ok(addr) = client_ip.parse::<IpAddr>() {
+        // Fast path: IP whitelist check.
         if whitelist.iter().any(|net| net.contains(&addr)) {
+            return next.run(req).await;
+        }
+
+        // Fallback: geo-proximity check.
+        if geo.is_within_radius(addr).await {
+            info!(client_ip = %client_ip, "Allowed by geo proximity");
             return next.run(req).await;
         }
     }
 
-    warn!(client_ip = %client_ip, "Blocked by IP whitelist");
+    warn!(client_ip = %client_ip, "Blocked by IP whitelist and geo check");
 
     (
         StatusCode::FORBIDDEN,

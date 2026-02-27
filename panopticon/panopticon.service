@@ -1,7 +1,7 @@
 [Unit]
 Description=Panopticon - RFID Door Access Web Server
-After=network-online.target postgresql.service
-Wants=network-online.target
+After=network-online.target postgresql.service gpsd.service
+Wants=network-online.target gpsd.service
 Requires=postgresql.service
 
 [Service]
