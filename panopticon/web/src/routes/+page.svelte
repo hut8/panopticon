@@ -35,6 +35,13 @@
 		created_at: string;
 	}
 
+	interface PendingUser {
+		id: string;
+		email: string;
+		email_confirmed: boolean;
+		created_at: string;
+	}
+
 	let utecStatus: UtecStatus | null = $state(null);
 	let isUtecAuthenticated = $derived(utecStatus?.authenticated ?? false);
 	let devices: DeviceInfo[] = $state([]);
@@ -45,6 +52,10 @@
 	let lockUsers: Record<string, LockUser[]> = $state({});
 	let lockUsersLoading: Record<string, boolean> = $state({});
 	let error: string | null = $state(null);
+
+	// Pending users (admin)
+	let pendingUsers: PendingUser[] = $state([]);
+	let pendingUsersError: string | null = $state(null);
 
 	// Access control state
 	let sentinelMode: string = $state('guard');
@@ -451,9 +462,57 @@
 		}
 	}
 
+	async function loadPendingUsers() {
+		try {
+			const res = await fetch('/api/admin/pending-users');
+			if (res.ok) {
+				pendingUsers = await res.json();
+			} else if (res.status === 401 || res.status === 403) {
+				pendingUsers = [];
+			} else {
+				pendingUsersError = 'Failed to load pending users';
+			}
+		} catch {
+			pendingUsersError = 'Failed to load pending users';
+		}
+	}
+
+	async function approveUser(id: string) {
+		pendingUsersError = null;
+		const prev = pendingUsers;
+		pendingUsers = pendingUsers.filter((u) => u.id !== id);
+		try {
+			const res = await fetch(`/api/admin/users/${id}/approve`, { method: 'POST' });
+			if (!res.ok) {
+				pendingUsers = prev;
+				if (res.status !== 403) pendingUsersError = 'Failed to approve user';
+			}
+		} catch {
+			pendingUsers = prev;
+			pendingUsersError = 'Failed to approve user';
+		}
+	}
+
+	async function deletePendingUser(id: string) {
+		pendingUsersError = null;
+		const prev = pendingUsers;
+		pendingUsers = pendingUsers.filter((u) => u.id !== id);
+		try {
+			const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+			if (!res.ok) {
+				pendingUsers = prev;
+				if (res.status !== 403) pendingUsersError = 'Failed to delete user';
+			}
+		} catch {
+			pendingUsers = prev;
+			pendingUsersError = 'Failed to delete user';
+		}
+	}
+
 	$effect(() => {
 		checkUtec();
 		loadCurrentUser();
+		loadPendingUsers();
 		loadSentinelMode();
 		loadCards();
 		loadScanLog();
@@ -513,6 +572,49 @@
 				</button>
 			</div>
 		</div>
+
+		<!-- Pending Users (admin only, shown when non-empty) -->
+		{#if pendingUsers.length > 0 || pendingUsersError}
+			<div class="card preset-filled-surface-900 space-y-4 p-6">
+				<h2 class="h5">Pending Users</h2>
+				{#if pendingUsersError}
+					<p class="text-sm text-error-400">{pendingUsersError}</p>
+				{/if}
+				<div class="space-y-2">
+					{#each pendingUsers as pu (pu.id)}
+						<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
+							<div class="flex items-center gap-3 min-w-0 flex-1">
+								<div class="min-w-0">
+									<p class="text-sm text-surface-200 truncate">{pu.email}</p>
+									<p class="text-xs text-surface-500">{formatDate(pu.created_at)}</p>
+								</div>
+								<span
+									class="flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium {pu.email_confirmed
+										? 'bg-success-500/15 text-success-400'
+										: 'bg-warning-500/15 text-warning-400'}"
+								>
+									{pu.email_confirmed ? 'Confirmed' : 'Unconfirmed'}
+								</span>
+							</div>
+							<div class="flex items-center gap-2 flex-shrink-0 ml-3">
+								<button
+									class="btn btn-sm preset-outlined-success-500"
+									onclick={() => approveUser(pu.id)}
+								>
+									Approve
+								</button>
+								<button
+									class="btn btn-sm preset-outlined-error-500"
+									onclick={() => deletePendingUser(pu.id)}
+								>
+									Delete
+								</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
 
 		<!-- Two-column grid on desktop, single column on mobile -->
 		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
