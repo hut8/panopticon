@@ -137,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .with_state(state);
 
-    let addr = "0.0.0.0:1337";
+    let addr = "127.0.0.1:1337";
     info!("Panopticon listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
