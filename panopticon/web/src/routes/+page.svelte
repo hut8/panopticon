@@ -471,20 +471,32 @@
 	}
 
 	async function approveUser(id: string) {
+		const prev = pendingUsers;
+		pendingUsers = pendingUsers.filter((u) => u.id !== id);
 		try {
 			const res = await fetch(`/api/admin/users/${id}/approve`, { method: 'POST' });
-			if (res.ok) pendingUsers = pendingUsers.filter((u) => u.id !== id);
+			if (!res.ok) {
+				pendingUsers = prev;
+				if (res.status !== 403) error = 'Failed to approve user';
+			}
 		} catch {
-			// ignore
+			pendingUsers = prev;
+			error = 'Failed to approve user';
 		}
 	}
 
 	async function deletePendingUser(id: string) {
+		const prev = pendingUsers;
+		pendingUsers = pendingUsers.filter((u) => u.id !== id);
 		try {
 			const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
-			if (res.ok) pendingUsers = pendingUsers.filter((u) => u.id !== id);
+			if (!res.ok) {
+				pendingUsers = prev;
+				if (res.status !== 403) error = 'Failed to delete user';
+			}
 		} catch {
-			// ignore
+			pendingUsers = prev;
+			error = 'Failed to delete user';
 		}
 	}
 

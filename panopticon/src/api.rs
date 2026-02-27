@@ -401,16 +401,7 @@ async fn delete_user(
 ) -> Result<StatusCode, ApiError> {
     require_approved(&user)?;
 
-    // Delete sessions first (foreign key), then the user
-    sqlx::query("DELETE FROM sessions WHERE user_id = $1")
-        .bind(id)
-        .execute(&state.db)
-        .await
-        .map_err(|e| {
-            error!("Failed to delete user sessions: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete user")
-        })?;
-
+    // Sessions are cleaned up via ON DELETE CASCADE.
     let result = sqlx::query("DELETE FROM users WHERE id = $1 AND is_approved = FALSE")
         .bind(id)
         .execute(&state.db)
