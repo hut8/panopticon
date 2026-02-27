@@ -62,6 +62,20 @@ impl Mailer {
         self.send(to_email, subject, &html).await
     }
 
+    pub async fn send_approval_email(&self, to_email: &str) -> Result<()> {
+        let dashboard_url = format!("{}/", self.base_url);
+        let subject = "Account approved";
+        let html = email_template(
+            "Account approved",
+            "Your Panopticon account has been approved. You now have full access.",
+            "Go to Dashboard",
+            &dashboard_url,
+            "You are receiving this because your Panopticon account was approved by an administrator.",
+        );
+
+        self.send(to_email, subject, &html).await
+    }
+
     pub async fn send_access_event_email(
         &self,
         to_email: &str,
