@@ -142,6 +142,30 @@ pub struct DeviceState {
     pub value: serde_json::Value,
 }
 
+/// A lock user (person with access codes/credentials on the lock).
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct LockUser {
+    pub id: u64,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub user_type: u32,
+    pub status: u32,
+    pub sync_status: u32,
+}
+
+/// A device with its lock users, as returned by the `st.lockUser/list` command.
+#[derive(Deserialize, Debug)]
+struct DeviceWithUsers {
+    id: String,
+    users: Vec<LockUser>,
+}
+
+/// Response payload for the lock user list command.
+#[derive(Deserialize, Debug)]
+struct DeviceUsersResponsePayload {
+    devices: Vec<DeviceWithUsers>,
+}
+
 /// A device with its current states, as returned by Query/Command responses.
 #[derive(Deserialize, Debug, Clone)]
 pub struct DeviceWithStates {
@@ -464,5 +488,32 @@ impl UTec {
             },
         )
         .await
+    }
+
+    /// List all users (access codes/credentials) on a lock device.
+    pub async fn list_lock_users(&self, device: &Device) -> Result<Vec<LockUser>> {
+        let payload: DeviceUsersResponsePayload = self
+            .request(
+                "Uhome.Device",
+                "Command",
+                CommandPayload {
+                    devices: vec![DeviceCommand {
+                        id: device.id.clone(),
+                        custom_data: device.custom_data.clone(),
+                        command: CommandSpec {
+                            capability: "st.lockUser".to_string(),
+                            name: "list".to_string(),
+                            arguments: None,
+                        },
+                    }],
+                },
+            )
+            .await?;
+        payload
+            .devices
+            .into_iter()
+            .find(|d| d.id == device.id)
+            .map(|d| d.users)
+            .context("Device not found in response")
     }
 }

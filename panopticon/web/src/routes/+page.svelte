@@ -20,6 +20,14 @@
 		created_at: string;
 	}
 
+	interface LockUser {
+		id: number;
+		name: string;
+		user_type: number;
+		status: number;
+		sync_status: number;
+	}
+
 	interface ScanLogEntry {
 		id: string;
 		tag_id: string;
@@ -28,10 +36,14 @@
 	}
 
 	let utecStatus: UtecStatus | null = $state(null);
+	let isUtecAuthenticated = $derived(utecStatus?.authenticated ?? false);
 	let devices: DeviceInfo[] = $state([]);
 	let loading = $state(true);
 	let devicesLoading = $state(false);
 	let actionInFlight: Record<string, boolean> = $state({});
+	let pendingAction: Record<string, 'locking' | 'unlocking'> = $state({});
+	let lockUsers: Record<string, LockUser[]> = $state({});
+	let lockUsersLoading: Record<string, boolean> = $state({});
 	let error: string | null = $state(null);
 
 	// Access control state
@@ -62,21 +74,40 @@
 		}
 	}
 
-	async function loadDevices() {
+	async function loadDevices(): Promise<DeviceInfo[]> {
 		devicesLoading = true;
 		error = null;
 		try {
 			const res = await fetch('/api/devices');
 			if (res.status === 503) {
 				devices = [];
-				return;
+				return [];
 			}
 			if (!res.ok) throw new Error('Failed to load devices');
-			devices = await res.json();
+			const loaded: DeviceInfo[] = await res.json();
+			devices = loaded;
+			return loaded;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load devices';
+			return [];
 		} finally {
 			devicesLoading = false;
+		}
+	}
+
+	async function loadLockUsers(deviceId: string) {
+		lockUsersLoading = { ...lockUsersLoading, [deviceId]: true };
+		try {
+			const res = await fetch(`/api/devices/${deviceId}/users`);
+			if (res.ok) {
+				lockUsers = { ...lockUsers, [deviceId]: await res.json() };
+			} else {
+				console.error(`Failed to load lock users for ${deviceId}: ${res.status}`);
+			}
+		} catch (e) {
+			console.error(`Failed to load lock users for ${deviceId}:`, e);
+		} finally {
+			lockUsersLoading = { ...lockUsersLoading, [deviceId]: false };
 		}
 	}
 
@@ -87,9 +118,13 @@
 			const res = await fetch(`/api/devices/${device.id}/${action}`, { method: 'POST' });
 			if (!res.ok) throw new Error(`Failed to ${action}`);
 			const result = await res.json();
-			devices = devices.map((d) =>
-				d.id === device.id ? { ...d, lock_state: result.lock_state } : d
-			);
+			if (result.lock_state) {
+				devices = devices.map((d) =>
+					d.id === device.id ? { ...d, lock_state: result.lock_state } : d
+				);
+			} else {
+				pendingAction = { ...pendingAction, [device.id]: action === 'lock' ? 'locking' : 'unlocking' };
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : `Failed to ${action}`;
 		} finally {
@@ -392,6 +427,8 @@
 				devices = devices.map((d) =>
 					d.id === lsDeviceId ? { ...d, lock_state: lsState } : d
 				);
+				const { [lsDeviceId]: _, ...remainingPending } = pendingAction;
+				pendingAction = remainingPending;
 				const lsDevice = devices.find((d) => d.id === lsDeviceId);
 				fireBrowserNotification(
 					`Lock ${lsState}`,
@@ -431,8 +468,12 @@
 	});
 
 	$effect(() => {
-		if (utecStatus?.authenticated) {
-			loadDevices();
+		if (isUtecAuthenticated) {
+			loadDevices().then((loaded) => {
+				for (const d of loaded) {
+					loadLockUsers(d.id);
+				}
+			});
 		}
 	});
 </script>
@@ -563,7 +604,28 @@
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-3">
 										<!-- Lock state indicator -->
-										{#if device.lock_state === 'locked'}
+										{#if pendingAction[device.id]}
+											<div
+												class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-500/15"
+											>
+												<svg
+													class="h-5 w-5 text-primary-400 animate-spin"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+													stroke-width="2"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+													/>
+												</svg>
+											</div>
+											<span class="text-sm font-medium text-primary-400 animate-pulse">
+												{pendingAction[device.id] === 'locking' ? 'Locking...' : 'Unlocking...'}
+											</span>
+										{:else if device.lock_state === 'locked'}
 											<div
 												class="flex h-10 w-10 items-center justify-center rounded-full bg-success-500/15"
 											>
@@ -649,7 +711,7 @@
 									class="btn btn-base w-full {device.lock_state === 'locked'
 										? 'preset-outlined-warning-500'
 										: 'preset-outlined-success-500'}"
-									disabled={actionInFlight[device.id] || !device.online}
+									disabled={actionInFlight[device.id] || pendingAction[device.id] || !device.online}
 									onclick={() => toggleLock(device)}
 								>
 									{#if actionInFlight[device.id]}
@@ -664,6 +726,30 @@
 										Lock
 									{/if}
 								</button>
+
+								<!-- Lock Users -->
+								{#if lockUsersLoading[device.id]}
+									<div class="border-t border-surface-700 pt-3">
+										<p class="text-xs text-surface-500 animate-pulse">Loading users...</p>
+									</div>
+								{:else if lockUsers[device.id] != null}
+									<div class="border-t border-surface-700 pt-3 space-y-2">
+										<h4 class="text-xs font-medium text-surface-400 uppercase tracking-wide">Lock Users</h4>
+										{#if lockUsers[device.id].length === 0}
+											<p class="text-xs text-surface-500">No users configured.</p>
+										{:else}
+											{#each lockUsers[device.id] as user (user.id)}
+												<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
+													<span class="text-sm text-surface-200">{user.name}</span>
+													<!-- U-Tec user types: 1 = Admin, 3 = User (see bug #6 in README) -->
+													<span class="text-xs text-surface-500">
+														{user.user_type === 1 ? 'Admin' : user.user_type === 3 ? 'User' : `Type ${user.user_type}`}
+													</span>
+												</div>
+											{/each}
+										{/if}
+									</div>
+								{/if}
 							</div>
 						{/each}
 					{/if}

@@ -184,3 +184,38 @@ But the Query response only returns `st.healthCheck`, `st.lock`, and `st.battery
 ### 3. `st.doorSensor` documentation describes the wrong capability
 
 The U-Tec docs describe `st.doorSensor` as "An indication of the status of the battery", which is clearly a copy-paste error from `st.batteryLevel`. This is the capability we need for door open/closed state from `utec-lock-sensor` devices (see bug #2), but the incorrect documentation makes it unclear what the actual payload looks like.
+
+### 4. `st.deferredResponse` — no async callback, wrong capability name
+
+The [documentation](https://doc.api.u-tec.com/#9adec248-fae5-4265-a432-eafaf952b0b7) says: "Typically, if a device operates with an asynchronous response mechanism, we first send a synchronous message to notify that a response may require a certain amount of waiting time. Then, once the operation is successfully completed on the device, an asynchronous response is sent back."
+
+In practice, no asynchronous response is ever sent back. You must make a second request (Query) after the indicated delay to get the actual device state. This is actually described in the attribute documentation itself: "The approximate time before you send your second response, in seconds" — contradicting the claim of an async callback.
+
+Additionally, the capability is documented as `st.DeferredResponse` but the API actually returns `st.deferredResponse` (lowercase `d`).
+
+### 5. `st.lockUser` type values are wrong in the documentation
+
+The [documentation](https://doc.api.u-tec.com/#4f860cbb-5470-41f2-85e3-b868e168db83) defines user types as `0: Normal User, 2: Temporary User, 3: Admin`. The actual API returns different values:
+
+| Documented | Actual |
+|------------|--------|
+| `0` = Normal User | Not observed |
+| `2` = Temporary User | Not observed |
+| `3` = Admin | `3` = Normal User |
+| (not documented) | `1` = Admin |
+
+Observed response:
+```json
+{
+  "users": [
+    { "id": 1000000001, "name": "Alice", "type": 1, "status": 1, "sync_status": 1 },
+    { "id": 1000000002, "name": "Bob", "type": 3, "status": 1, "sync_status": 1 }
+  ]
+}
+```
+
+Here `type: 1` is the account owner (admin) and `type: 3` is a normal user — the opposite of what the docs say.
+
+### 6. Developer support
+
+The correct URL for xthings developer support requests is: https://developer.xthings.com/hc/en-us/requests/new
