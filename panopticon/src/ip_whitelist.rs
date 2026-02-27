@@ -8,7 +8,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use ipnet::IpNet;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::auth_store::resolve_auth_path;
 use crate::geo_access::GeoAccess;
@@ -71,7 +71,7 @@ pub async fn check(
 
         // Fallback: geo-proximity check.
         if geo.is_within_radius(addr).await {
-            info!(client_ip = %client_ip, "Allowed by geo proximity");
+            debug!(client_ip = %client_ip, "Allowed by geo proximity");
             return next.run(req).await;
         }
     }

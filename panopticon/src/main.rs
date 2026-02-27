@@ -63,7 +63,9 @@ async fn main() -> anyhow::Result<()> {
     let push_config = PushConfig::new()?;
     let whitelist = ip_whitelist::load_whitelist()?;
     let geo = geo_access::GeoAccess::init().await;
-    geo.spawn_gpsd_task();
+    if geo.is_enabled() {
+        geo.spawn_gpsd_task();
+    }
 
     let sentinel_secret =
         std::env::var("SENTINEL_SECRET").unwrap_or_else(|_| "changeme".to_string());
