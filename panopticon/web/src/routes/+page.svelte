@@ -20,6 +20,14 @@
 		created_at: string;
 	}
 
+	interface LockUser {
+		id: number;
+		name: string;
+		user_type: number;
+		status: number;
+		sync_status: number;
+	}
+
 	interface ScanLogEntry {
 		id: string;
 		tag_id: string;
@@ -32,6 +40,8 @@
 	let loading = $state(true);
 	let devicesLoading = $state(false);
 	let actionInFlight: Record<string, boolean> = $state({});
+	let lockUsers: Record<string, LockUser[]> = $state({});
+	let lockUsersLoading: Record<string, boolean> = $state({});
 	let error: string | null = $state(null);
 
 	// Access control state
@@ -80,6 +90,20 @@
 		}
 	}
 
+	async function loadLockUsers(deviceId: string) {
+		lockUsersLoading = { ...lockUsersLoading, [deviceId]: true };
+		try {
+			const res = await fetch(`/api/devices/${deviceId}/users`);
+			if (res.ok) {
+				lockUsers = { ...lockUsers, [deviceId]: await res.json() };
+			}
+		} catch {
+			// ignore
+		} finally {
+			lockUsersLoading = { ...lockUsersLoading, [deviceId]: false };
+		}
+	}
+
 	async function toggleLock(device: DeviceInfo) {
 		const action = device.lock_state === 'locked' ? 'unlock' : 'lock';
 		actionInFlight = { ...actionInFlight, [device.id]: true };
@@ -87,9 +111,11 @@
 			const res = await fetch(`/api/devices/${device.id}/${action}`, { method: 'POST' });
 			if (!res.ok) throw new Error(`Failed to ${action}`);
 			const result = await res.json();
-			devices = devices.map((d) =>
-				d.id === device.id ? { ...d, lock_state: result.lock_state } : d
-			);
+			if (result.lock_state) {
+				devices = devices.map((d) =>
+					d.id === device.id ? { ...d, lock_state: result.lock_state } : d
+				);
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : `Failed to ${action}`;
 		} finally {
@@ -432,7 +458,11 @@
 
 	$effect(() => {
 		if (utecStatus?.authenticated) {
-			loadDevices();
+			loadDevices().then(() => {
+				for (const d of devices) {
+					loadLockUsers(d.id);
+				}
+			});
 		}
 	});
 </script>
@@ -664,6 +694,25 @@
 										Lock
 									{/if}
 								</button>
+
+								<!-- Lock Users -->
+								{#if lockUsersLoading[device.id]}
+									<div class="border-t border-surface-700 pt-3">
+										<p class="text-xs text-surface-500 animate-pulse">Loading users...</p>
+									</div>
+								{:else if lockUsers[device.id]?.length}
+									<div class="border-t border-surface-700 pt-3 space-y-2">
+										<h4 class="text-xs font-medium text-surface-400 uppercase tracking-wide">Lock Users</h4>
+										{#each lockUsers[device.id] as user (user.id)}
+											<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
+												<span class="text-sm text-surface-200">{user.name}</span>
+												<span class="text-xs text-surface-500">
+													{user.user_type === 1 ? 'Admin' : user.user_type === 2 ? 'User' : `Type ${user.user_type}`}
+												</span>
+											</div>
+										{/each}
+									</div>
+								{/if}
 							</div>
 						{/each}
 					{/if}

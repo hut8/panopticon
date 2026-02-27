@@ -5,10 +5,11 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use std::time::Duration;
+use tracing::{debug, error};
 
 use crate::middleware::AuthUser;
-use crate::utec::UTec;
+use crate::utec::{Device, DeviceWithStates, LockUser, UTec};
 use crate::ws::WsEvent;
 use crate::AppState;
 
@@ -44,6 +45,7 @@ pub fn router() -> Router<AppState> {
         .route("/devices", get(list_devices))
         .route("/devices/{id}/lock", post(lock_device))
         .route("/devices/{id}/unlock", post(unlock_device))
+        .route("/devices/{id}/users", get(list_lock_users))
         .route(
             "/notifications",
             get(get_notifications).put(update_notifications),
@@ -132,17 +134,7 @@ async fn lock_device(
         (StatusCode::BAD_GATEWAY, "Failed to lock device")
     })?;
 
-    let lock_state = results
-        .iter()
-        .find(|s| s.id == id)
-        .and_then(|s| s.lock_state());
-
-    if let Some(ref ls) = lock_state {
-        let _ = state.events.send(WsEvent::LockState {
-            device_id: id,
-            lock_state: ls.clone(),
-        });
-    }
+    let lock_state = handle_lock_response(&state, &id, device, &results);
 
     Ok(Json(LockActionResponse {
         success: true,
@@ -172,22 +164,94 @@ async fn unlock_device(
         (StatusCode::BAD_GATEWAY, "Failed to unlock device")
     })?;
 
-    let lock_state = results
-        .iter()
-        .find(|s| s.id == id)
-        .and_then(|s| s.lock_state());
-
-    if let Some(ref ls) = lock_state {
-        let _ = state.events.send(WsEvent::LockState {
-            device_id: id,
-            lock_state: ls.clone(),
-        });
-    }
+    let lock_state = handle_lock_response(&state, &id, device, &results);
 
     Ok(Json(LockActionResponse {
         success: true,
         lock_state,
     }))
+}
+
+/// Handle a lock/unlock command response: if the lock state is immediately
+/// available, broadcast it via WebSocket. If the API returns a deferred
+/// response (st.deferredResponse), spawn a background task that waits the
+/// indicated number of seconds, then queries the device and broadcasts the
+/// resulting lock state.
+fn handle_lock_response(
+    state: &AppState,
+    device_id: &str,
+    device: &Device,
+    results: &[DeviceWithStates],
+) -> Option<String> {
+    let device_result = results.iter().find(|s| s.id == device_id);
+    let lock_state = device_result.and_then(|s| s.lock_state());
+
+    if let Some(ref ls) = lock_state {
+        let _ = state.events.send(WsEvent::LockState {
+            device_id: device_id.to_string(),
+            lock_state: ls.clone(),
+        });
+    } else if let Some(seconds) = device_result
+        .and_then(|s| s.get_state("st.deferredResponse", "seconds"))
+        .and_then(|s| s.value.as_u64())
+    {
+        let state = state.clone();
+        let device_id = device_id.to_string();
+        let device = device.clone();
+        tokio::spawn(async move {
+            debug!(device_id, seconds, "Waiting for deferred lock response");
+            tokio::time::sleep(Duration::from_secs(seconds)).await;
+
+            let Some(client) = state.auth_store.client().await else {
+                error!(device_id, "No U-Tec client available for deferred poll");
+                return;
+            };
+            match client.query_device(&device).await {
+                Ok(device_states) => {
+                    if let Some(ls) = device_states.lock_state() {
+                        debug!(device_id, lock_state = %ls, "Deferred lock state resolved");
+                        let _ = state.events.send(WsEvent::LockState {
+                            device_id,
+                            lock_state: ls,
+                        });
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        device_id,
+                        "Failed to query device after deferred wait: {e:#}"
+                    );
+                }
+            }
+        });
+    }
+
+    lock_state
+}
+
+async fn list_lock_users(
+    _user: AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<LockUser>>, ApiError> {
+    let client = get_client(&state).await?;
+
+    let locks = client.discover_locks().await.map_err(|e| {
+        error!("Failed to discover locks: {e:#}");
+        (StatusCode::BAD_GATEWAY, "Failed to discover locks")
+    })?;
+
+    let device = locks
+        .iter()
+        .find(|d| d.id == id)
+        .ok_or((StatusCode::NOT_FOUND, "Device not found"))?;
+
+    let users = client.list_lock_users(device).await.map_err(|e| {
+        error!("Failed to list lock users for device {id}: {e:#}");
+        (StatusCode::BAD_GATEWAY, "Failed to list lock users")
+    })?;
+
+    Ok(Json(users))
 }
 
 async fn get_notifications(
