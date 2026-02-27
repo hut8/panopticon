@@ -342,7 +342,7 @@ async fn list_pending_users(
     require_approved(&user)?;
 
     let rows: Vec<(Uuid, String, bool, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-        "SELECT id, email, email_confirmed, created_at FROM users WHERE is_approved = FALSE",
+        "SELECT id, email, email_confirmed, created_at FROM users WHERE is_approved = FALSE ORDER BY created_at ASC",
     )
     .fetch_all(&state.db)
     .await

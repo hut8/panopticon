@@ -55,6 +55,7 @@
 
 	// Pending users (admin)
 	let pendingUsers: PendingUser[] = $state([]);
+	let pendingUsersError: string | null = $state(null);
 
 	// Access control state
 	let sentinelMode: string = $state('guard');
@@ -464,39 +465,47 @@
 	async function loadPendingUsers() {
 		try {
 			const res = await fetch('/api/admin/pending-users');
-			if (res.ok) pendingUsers = await res.json();
+			if (res.ok) {
+				pendingUsers = await res.json();
+			} else if (res.status === 401 || res.status === 403) {
+				pendingUsers = [];
+			} else {
+				pendingUsersError = 'Failed to load pending users';
+			}
 		} catch {
-			// ignore — user may not be approved
+			pendingUsersError = 'Failed to load pending users';
 		}
 	}
 
 	async function approveUser(id: string) {
+		pendingUsersError = null;
 		const prev = pendingUsers;
 		pendingUsers = pendingUsers.filter((u) => u.id !== id);
 		try {
 			const res = await fetch(`/api/admin/users/${id}/approve`, { method: 'POST' });
 			if (!res.ok) {
 				pendingUsers = prev;
-				if (res.status !== 403) error = 'Failed to approve user';
+				if (res.status !== 403) pendingUsersError = 'Failed to approve user';
 			}
 		} catch {
 			pendingUsers = prev;
-			error = 'Failed to approve user';
+			pendingUsersError = 'Failed to approve user';
 		}
 	}
 
 	async function deletePendingUser(id: string) {
+		pendingUsersError = null;
 		const prev = pendingUsers;
 		pendingUsers = pendingUsers.filter((u) => u.id !== id);
 		try {
 			const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
 			if (!res.ok) {
 				pendingUsers = prev;
-				if (res.status !== 403) error = 'Failed to delete user';
+				if (res.status !== 403) pendingUsersError = 'Failed to delete user';
 			}
 		} catch {
 			pendingUsers = prev;
-			error = 'Failed to delete user';
+			pendingUsersError = 'Failed to delete user';
 		}
 	}
 
@@ -565,9 +574,12 @@
 		</div>
 
 		<!-- Pending Users (admin only, shown when non-empty) -->
-		{#if pendingUsers.length > 0}
+		{#if pendingUsers.length > 0 || pendingUsersError}
 			<div class="card preset-filled-surface-900 space-y-4 p-6">
 				<h2 class="h5">Pending Users</h2>
+				{#if pendingUsersError}
+					<p class="text-sm text-error-400">{pendingUsersError}</p>
+				{/if}
 				<div class="space-y-2">
 					{#each pendingUsers as pu (pu.id)}
 						<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
