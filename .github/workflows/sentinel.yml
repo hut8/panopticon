@@ -35,7 +35,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: sentinel/.embuild
-          key: esp-idf-${{ hashFiles('sentinel/Cargo.lock') }}
+          key: esp-idf-${{ hashFiles('sentinel/Cargo.lock', 'sentinel/.cargo/config.toml', 'sentinel/sdkconfig.defaults') }}
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y ninja-build python3-venv
@@ -48,3 +48,6 @@ jobs:
 
       - name: Build
         run: cargo build
+
+      - name: Test
+        run: cargo test
