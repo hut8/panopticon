@@ -12,6 +12,7 @@ log = "0.4"
 
 [build-dependencies]
 embuild = "0.33"
+dotenvy = "0.15"
 
 [profile.release]
 opt-level = "s"
