@@ -6,6 +6,7 @@ resolver = "2"
 
 [dependencies]
 esp-idf-svc = { version = "0.51", features = ["std"] }
+embedded-svc = "0.28"
 anyhow = "1"
 log = "0.4"
 
