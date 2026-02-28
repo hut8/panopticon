@@ -18,15 +18,10 @@ use rfiduino::{format_tag_id, format_tag_id_hex, RFIDuino, TagId};
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
-/// WiFi credentials. Set these before building.
-const WIFI_SSID: &str = "YOUR_WIFI_SSID";
-const WIFI_PASS: &str = "YOUR_WIFI_PASSWORD";
-
-/// Panopticon server URL (HTTP, LAN only).
-const PANOPTICON_URL: &str = "http://192.168.1.100:1337";
-
-/// Shared secret for authenticating with panopticon.
-const SENTINEL_SECRET: &str = "changeme";
+const WIFI_SSID: &str = env!("WIFI_SSID");
+const WIFI_PASS: &str = env!("WIFI_PASS");
+const PANOPTICON_URL: &str = env!("PANOPTICON_URL");
+const SENTINEL_SECRET: &str = env!("SENTINEL_SECRET");
 
 /// Cooldown between successful scans of the same tag (prevents rapid re-triggering).
 const SCAN_COOLDOWN: Duration = Duration::from_secs(5);

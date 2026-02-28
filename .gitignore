@@ -16,6 +16,7 @@ panopticon/web/.svelte-kit/
 # Environment files (secrets)
 .env
 panopticon/.env
+sentinel/.env
 
 # Logs
 .logs/
