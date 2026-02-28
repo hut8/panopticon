@@ -109,27 +109,34 @@ If you need maximum range:
 You are NOT stacking the shield — you wire point-to-point from the ESP32 to the shield's Arduino header pads or RobotGeek 3-pin connectors.
 
 ```
-ESP32-C3 SuperMini          RFIDuino Shield v1.2
-──────────────────          ────────────────────
-GPIO2  ──────────────────── demod_out  (D3 pad)
-GPIO3  ──────────────────── rdy_clk    (D2 pad)
-GPIO4  ──────────────────── shd        (D7 pad)
-GPIO5  ──────────────────── mod        (D6 pad)
+ESP32-C3 SuperMini          RFIDuino Shield v1.2        Function
+──────────────────          ────────────────────        ────────
+GPIO2  ──────────────────── D3 pad (demod_out)          RFID data from EM4095
+GPIO3  ──────────────────── D2 pad (rdy_clk)            EM4095 clock
+GPIO4  ──────────────────── D7 pad (shd)                EM4095 shutdown
+GPIO5  ──────────────────── D6 pad (mod)                EM4095 modulation
+GPIO6  ──────────────────── D5 pad (buzzer)             Piezo buzzer (PWM)
+GPIO7  ──────────────────── D8 pad (led1)               Red LED
+GPIO8  ──────────────────── D4 pad (led2)               Green LED
 3.3V   ──────────────────── VCC
 GND    ──────────────────── GND
 ```
 
-The GPIO numbers are configurable — edit the `PIN_*` constants in `src/main.rs`.
+The GPIO numbers are configurable — edit the pin assignments in `src/main.rs`.
+
+The buzzer is a passive piezo driven with a PWM square wave. The Arduino library uses `tone()` at 1300–4500Hz; on the ESP32-C3 you use the LEDC peripheral to generate the same kind of signal.
 
 ### Which connectors on the shield?
 
 The shield has several connection points:
-- **3-pin RobotGeek connectors** (Signal-VCC-GND) on the digital I/O side — easiest for jumper wires
-- **Arduino header pads** — the through-hole pads where it would normally stack onto an Arduino
+- **Arduino header pads** — the through-hole pads where it would normally stack onto an Arduino. The RFID signals (D2, D3, D6, D7), buzzer (D5), and LEDs (D4, D8) are all here.
+- **3-pin RobotGeek connectors** — rows of 3-pin headers labelled **S-V-G** on the board, where **S** = Signal, **V** = Voltage (VCC), **G** = Ground. These break out individual Arduino pins with power and ground alongside, so you can plug in a servo or sensor with a single 3-pin cable. The shield has two groups:
+  - **DIO-9 through DIO-12** — Digital I/O pins 9–12 (unused by the shield itself)
+  - **AIO-0 through AIO-3** — Analog I/O pins A0–A3 (unused by the shield itself)
 - **4-pin I2C connector** — not needed for this project
 - **XBee socket** — not needed
 
-The 4 signals you need (demod_out, rdy_clk, shd, mod) are on digital pins D2, D3, D6, D7 of the Arduino header footprint.
+The DIO/AIO connectors are free pins for your own peripherals. The 6 pins the shield actually uses (D2, D3, D4, D5, D6, D7, D8) are only accessible via the Arduino header pads — they don't have their own 3-pin breakout connectors.
 
 ---
 
