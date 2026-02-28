@@ -1,3 +1,4 @@
+mod buzzer;
 mod rfiduino;
 
 use std::time::Duration;
@@ -50,12 +51,17 @@ fn main() -> Result<()> {
     let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
     info!("WiFi connected — IP: {}", ip_info.ip);
 
+    // ── Startup melody ────────────────────────────────────────────────────
+    let pins = peripherals.pins;
+    info!("Playing startup melody...");
+    buzzer::play_startup_melody(
+        peripherals.ledc.timer0,
+        peripherals.ledc.channel0,
+        pins.gpio6,
+    )?;
+
     // ── RFID reader ────────────────────────────────────────────────────────
     info!("Initializing RFIDuino...");
-
-    // Pin assignments — adjust to match your wiring from ESP32-C3 to RFIDuino Shield.
-    // GPIO numbers are ESP32-C3 GPIOs, NOT Arduino pin numbers.
-    let pins = peripherals.pins;
     let mut reader = RFIDuino::new(
         pins.gpio2.into(), // DEMOD_OUT (shield D3 pad)
         pins.gpio3.into(), // RDY_CLK  (shield D2 pad)
