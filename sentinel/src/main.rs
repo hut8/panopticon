@@ -31,19 +31,6 @@ const SENTINEL_SECRET: &str = "changeme";
 /// Cooldown between successful scans of the same tag (prevents rapid re-triggering).
 const SCAN_COOLDOWN: Duration = Duration::from_secs(5);
 
-// ── Pin assignments ────────────────────────────────────────────────────────
-// Adjust these to match your wiring from the ESP32-C3 to the RFIDuino Shield.
-// These are GPIO numbers on the ESP32-C3, NOT the Arduino pin numbers.
-
-/// GPIO connected to EM4095 DEMOD_OUT (shield D3 pad)
-const PIN_DEMOD_OUT: u32 = 2;
-/// GPIO connected to EM4095 RDY_CLK (shield D2 pad)
-const PIN_RDY_CLK: u32 = 3;
-/// GPIO connected to EM4095 SHD (shield D7 pad)
-const PIN_SHD: u32 = 4;
-/// GPIO connected to EM4095 MOD (shield D6 pad)
-const PIN_MOD: u32 = 5;
-
 // ── Main ───────────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -71,14 +58,14 @@ fn main() -> Result<()> {
     // ── RFID reader ────────────────────────────────────────────────────────
     info!("Initializing RFIDuino...");
 
-    // Map our pin constants to the actual peripheral pins.
-    // The `pins` struct has fields like gpio0, gpio1, ... — we pick them by number.
+    // Pin assignments — adjust to match your wiring from ESP32-C3 to RFIDuino Shield.
+    // GPIO numbers are ESP32-C3 GPIOs, NOT Arduino pin numbers.
     let pins = peripherals.pins;
     let mut reader = RFIDuino::new(
-        get_input_pin(&pins, PIN_DEMOD_OUT)?,
-        get_input_pin(&pins, PIN_RDY_CLK)?,
-        get_output_pin(&pins, PIN_SHD)?,
-        get_output_pin(&pins, PIN_MOD)?,
+        pins.gpio2.into(),  // DEMOD_OUT (shield D3 pad)
+        pins.gpio3.into(),  // RDY_CLK  (shield D2 pad)
+        pins.gpio4.into(),  // SHD      (shield D7 pad)
+        pins.gpio5.into(),  // MOD      (shield D6 pad)
     )?;
     info!("RFIDuino ready — scan a tag");
 
@@ -176,53 +163,4 @@ fn report_scan(tag_id: &str) -> Result<bool> {
     // Simple check — look for "granted" or "enrolled" in the response
     let success = body_str.contains("granted") || body_str.contains("enrolled");
     Ok(success)
-}
-
-// ── Pin mapping helpers ────────────────────────────────────────────────────
-// These helpers pick a GPIO by number from the Peripherals pins struct.
-// This keeps the pin assignments as simple constants at the top of the file.
-
-use esp_idf_svc::hal::gpio::{AnyInputPin, AnyOutputPin};
-
-macro_rules! match_gpio_input {
-    ($pins:expr, $num:expr, [ $($n:literal => $field:ident),+ $(,)? ]) => {
-        match $num {
-            $( $n => Ok($pins.$field.into()), )+
-            other => Err(anyhow::anyhow!("GPIO{other} is not a valid input pin")),
-        }
-    }
-}
-
-macro_rules! match_gpio_output {
-    ($pins:expr, $num:expr, [ $($n:literal => $field:ident),+ $(,)? ]) => {
-        match $num {
-            $( $n => Ok($pins.$field.into()), )+
-            other => Err(anyhow::anyhow!("GPIO{other} is not a valid output pin")),
-        }
-    }
-}
-
-fn get_input_pin(
-    pins: &esp_idf_svc::hal::gpio::Pins,
-    num: u32,
-) -> Result<AnyInputPin> {
-    // ESP32-C3 has GPIO 0-10, 18-21 (not all available on every board)
-    match_gpio_input!(pins, num, [
-        0 => gpio0, 1 => gpio1, 2 => gpio2, 3 => gpio3,
-        4 => gpio4, 5 => gpio5, 6 => gpio6, 7 => gpio7,
-        8 => gpio8, 9 => gpio9, 10 => gpio10,
-        18 => gpio18, 19 => gpio19, 20 => gpio20, 21 => gpio21,
-    ])
-}
-
-fn get_output_pin(
-    pins: &esp_idf_svc::hal::gpio::Pins,
-    num: u32,
-) -> Result<AnyOutputPin> {
-    match_gpio_output!(pins, num, [
-        0 => gpio0, 1 => gpio1, 2 => gpio2, 3 => gpio3,
-        4 => gpio4, 5 => gpio5, 6 => gpio6, 7 => gpio7,
-        8 => gpio8, 9 => gpio9, 10 => gpio10,
-        18 => gpio18, 19 => gpio19, 20 => gpio20, 21 => gpio21,
-    ])
 }
