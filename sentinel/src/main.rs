@@ -57,16 +57,16 @@ fn main() -> Result<()> {
     buzzer::play_startup_melody(
         peripherals.ledc.timer0,
         peripherals.ledc.channel0,
-        pins.gpio6,
+        pins.gpio19,
     )?;
 
     // ── RFID reader ────────────────────────────────────────────────────────
     info!("Initializing RFIDuino...");
     let mut reader = RFIDuino::new(
-        pins.gpio2.into(), // DEMOD_OUT (shield D3 pad)
-        pins.gpio3.into(), // RDY_CLK  (shield D2 pad)
-        pins.gpio4.into(), // SHD      (shield D7 pad)
-        pins.gpio5.into(), // MOD      (shield D6 pad)
+        pins.gpio13.into(), // DEMOD_OUT (shield D3 pad)
+        pins.gpio14.into(), // RDY_CLK  (shield D2 pad)
+        pins.gpio15.into(), // SHD      (shield D7 pad)
+        pins.gpio18.into(), // MOD      (shield D6 pad)
     )?;
     info!("RFIDuino ready — scan a tag");
 
