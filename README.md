@@ -13,8 +13,8 @@ RFID-based door access control system with two components:
 
 1. The RFIDuino Shield's EM4095 chip continuously reads 125kHz RFID tags and outputs a demodulated digital signal
 2. The ESP32-C3 Manchester-decodes this signal into a 5-byte tag ID (a direct Rust port of the RFIDuino Arduino library)
-3. The tag ID is compared against a hardcoded allowlist
-4. If authorised, an HTTPS POST is sent to an IFTTT webhook with the tag ID as payload
+3. The tag ID is POSTed to the panopticon server's `/api/sentinel/scan` endpoint with a shared secret for authentication
+4. Panopticon decides whether to grant or deny access
 
 ---
 
@@ -152,28 +152,33 @@ cargo install ldproxy          # Linker proxy for ESP-IDF
 
 ### Configuration
 
-Edit the constants at the top of `src/main.rs`:
+Copy the example env file and fill in your values:
 
-```rust
-const WIFI_SSID: &str = "YOUR_WIFI_SSID";
-const WIFI_PASS: &str = "YOUR_WIFI_PASSWORD";
-const IFTTT_EVENT: &str = "rfid_door";
-const IFTTT_KEY: &str = "YOUR_IFTTT_KEY";
+```bash
+cd sentinel
+cp .env.example .env
 ```
 
-Add your RFID tag IDs to the allowlist:
+Edit `sentinel/.env` with your WiFi credentials, panopticon server URL, and shared secret:
 
-```rust
-const ALLOWED_TAGS: &[TagId] = &[
-    [128, 0, 72, 35, 76],  // Replace with your actual tag IDs
-];
+```
+WIFI_SSID=your_wifi_ssid
+WIFI_PASS=your_wifi_password
+PANOPTICON_URL=https://your-panopticon-server.example.com
+SENTINEL_SECRET=generate_a_random_32char_hex_string
 ```
 
-To discover your tag IDs, flash the firmware with an empty allowlist and scan your tags — the IDs will appear in the serial monitor log.
+These are embedded into the firmware binary at compile time via `build.rs` — the `.env` file is gitignored and never committed.
+
+The `SENTINEL_SECRET` must match the value configured on the panopticon server.
 
 ### Build and flash
 
+**Important:** Connect the USB cable directly to the ESP32-C3 chip's USB port, not the USB port on any breakout board or shield. The chip's native USB-serial is used for both flashing and serial monitoring.
+
 ```bash
+cd sentinel
+
 # Build (first build downloads ESP-IDF SDK — takes a while)
 cargo build
 
@@ -182,17 +187,6 @@ cargo run
 ```
 
 The serial monitor (`espflash monitor`) shows log output over USB at runtime.
-
-### IFTTT setup
-
-1. Go to [IFTTT](https://ifttt.com) and create a new applet
-2. **If This**: Choose "Webhooks" → "Receive a web request"
-3. Set the event name to match `IFTTT_EVENT` (default: `rfid_door`)
-4. **Then That**: Choose your action (e.g., unlock a smart lock, send a notification)
-5. Go to [IFTTT Webhooks settings](https://ifttt.com/maker_webhooks) → "Documentation" to find your key
-6. Put that key in `IFTTT_KEY`
-
-The webhook payload sends the tag ID as `value1`.
 
 ---
 
