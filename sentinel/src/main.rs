@@ -62,10 +62,10 @@ fn main() -> Result<()> {
     // GPIO numbers are ESP32-C3 GPIOs, NOT Arduino pin numbers.
     let pins = peripherals.pins;
     let mut reader = RFIDuino::new(
-        pins.gpio2.into(),  // DEMOD_OUT (shield D3 pad)
-        pins.gpio3.into(),  // RDY_CLK  (shield D2 pad)
-        pins.gpio4.into(),  // SHD      (shield D7 pad)
-        pins.gpio5.into(),  // MOD      (shield D6 pad)
+        pins.gpio2.into(), // DEMOD_OUT (shield D3 pad)
+        pins.gpio3.into(), // RDY_CLK  (shield D2 pad)
+        pins.gpio4.into(), // SHD      (shield D7 pad)
+        pins.gpio5.into(), // MOD      (shield D6 pad)
     )?;
     info!("RFIDuino ready — scan a tag");
 
@@ -79,9 +79,7 @@ fn main() -> Result<()> {
 
             // Cooldown check — don't re-trigger for the same tag within SCAN_COOLDOWN
             let should_trigger = match &last_scan {
-                Some((prev_tag, when)) => {
-                    *prev_tag != tag || when.elapsed() >= SCAN_COOLDOWN
-                }
+                Some((prev_tag, when)) => *prev_tag != tag || when.elapsed() >= SCAN_COOLDOWN,
                 None => true,
             };
 
@@ -131,7 +129,10 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {
 /// POST the scanned tag to panopticon. Returns true if action is "granted" or "enrolled".
 fn report_scan(tag_id: &str) -> Result<bool> {
     let url = format!("{}/api/sentinel/scan", PANOPTICON_URL);
-    let body = format!(r#"{{"tag_id":"{}","secret":"{}"}}"#, tag_id, SENTINEL_SECRET);
+    let body = format!(
+        r#"{{"tag_id":"{}","secret":"{}"}}"#,
+        tag_id, SENTINEL_SECRET
+    );
     let content_length = body.len().to_string();
 
     let headers = [
