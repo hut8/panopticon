@@ -1,12 +1,14 @@
 //! Piezo buzzer driver using the ESP32 LEDC (PWM) peripheral.
 //!
 //! The RFIDuino Shield v1.2 has a passive piezo buzzer on Arduino D5,
-//! wired to ESP32-C3 GPIO6. A passive piezo needs a square wave to
+//! wired to ESP32 GPIO19. A passive piezo needs a square wave to
 //! produce sound — we use the LEDC peripheral at 50% duty cycle and
 //! vary the frequency for different notes.
 
 use esp_idf_svc::hal::delay::FreeRtos;
+use esp_idf_svc::hal::gpio::OutputPin;
 use esp_idf_svc::hal::ledc::{config::TimerConfig, LedcDriver, LedcTimerDriver, CHANNEL0, TIMER0};
+use esp_idf_svc::hal::peripheral::Peripheral;
 use esp_idf_svc::hal::prelude::*;
 
 /// A note: frequency in Hz and duration in ms. Frequency 0 = rest (silence).
