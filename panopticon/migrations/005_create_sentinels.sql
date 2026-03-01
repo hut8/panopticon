@@ -1,7 +1,7 @@
 CREATE TABLE sentinels (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL DEFAULT 'sentinel',
-    secret TEXT NOT NULL,
+    secret TEXT NOT NULL UNIQUE,
     connected BOOLEAN NOT NULL DEFAULT FALSE,
     last_connected_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()

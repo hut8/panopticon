@@ -7,15 +7,19 @@ use crate::sentinel::{is_valid_tag_id, process_scan};
 use crate::ws::WsEvent;
 use crate::AppState;
 
-/// Bind to port 8008 and accept sentinel TCP connections.
+/// Maximum allowed line length from a sentinel (8 KiB).
+const MAX_LINE_LENGTH: usize = 8192;
+
+/// Bind to a configurable address and accept sentinel TCP connections.
 pub async fn spawn_tcp_listener(state: AppState) {
-    let listener = match TcpListener::bind("0.0.0.0:8008").await {
+    let addr = std::env::var("SENTINEL_TCP_ADDR").unwrap_or_else(|_| "0.0.0.0:8008".to_string());
+    let listener = match TcpListener::bind(&addr).await {
         Ok(l) => {
-            info!("Sentinel TCP listener on 0.0.0.0:8008");
+            info!("Sentinel TCP listener on {addr}");
             l
         }
         Err(e) => {
-            error!("Failed to bind sentinel TCP listener: {e}");
+            error!("Failed to bind sentinel TCP listener on {addr}: {e}");
             return;
         }
     };
@@ -46,11 +50,23 @@ async fn handle_connection(
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
 
-    // 1. Expect AUTHZ as the first message
+    // 1. Expect AUTHZ as the first message (with 10-second timeout)
     line.clear();
-    let n = reader.read_line(&mut line).await?;
+    let n = match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        reader.read_line(&mut line),
+    )
+    .await
+    {
+        Ok(Ok(n)) => n,
+        Ok(Err(e)) => anyhow::bail!("Read error during AUTHZ: {e}"),
+        Err(_) => anyhow::bail!("Timed out waiting for AUTHZ"),
+    };
     if n == 0 {
         anyhow::bail!("Connection closed before AUTHZ");
+    }
+    if line.len() > MAX_LINE_LENGTH {
+        anyhow::bail!("AUTHZ line exceeds maximum length");
     }
 
     let trimmed = line.trim();
@@ -95,64 +111,87 @@ async fn handle_connection(
         name: sentinel_name.clone(),
     });
 
-    // 3. Read messages in a loop
-    loop {
-        line.clear();
-        let n = reader.read_line(&mut line).await?;
-        if n == 0 {
-            break; // Connection closed
-        }
-
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        if let Some(payload) = trimmed.strip_prefix("LOG: ") {
-            // Insert log into DB
-            let log_row: Option<(Uuid, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-                "INSERT INTO sentinel_logs (sentinel_id, message) VALUES ($1, $2) RETURNING id, created_at",
-            )
-            .bind(sentinel_id)
-            .bind(payload)
-            .fetch_optional(&state.db)
-            .await
-            .ok()
-            .flatten();
-
-            if let Some((_log_id, created_at)) = log_row {
-                let _ = state.events.send(WsEvent::SentinelLog {
-                    sentinel_id,
-                    message: payload.to_string(),
-                    created_at: created_at.to_rfc3339(),
-                });
+    // 3. Read messages in a loop — use a closure-like pattern to guarantee cleanup
+    let loop_result: anyhow::Result<()> = async {
+        loop {
+            line.clear();
+            let n = match reader.read_line(&mut line).await {
+                Ok(n) => n,
+                Err(e) => {
+                    warn!(%addr, sentinel_id = %sentinel_id, "Read error: {e}");
+                    break;
+                }
+            };
+            if n == 0 {
+                break; // Connection closed
             }
-        } else if let Some(tag_id) = trimmed.strip_prefix("SCAN: ") {
-            if !is_valid_tag_id(tag_id) {
-                warn!(%addr, tag_id, "Invalid tag_id format from sentinel");
+            if line.len() > MAX_LINE_LENGTH {
+                warn!(%addr, sentinel_id = %sentinel_id, "Line exceeds max length ({} bytes), dropping", line.len());
                 continue;
             }
 
-            match process_scan(&state, tag_id).await {
-                Ok(action) => {
-                    info!(%addr, tag_id, action, "Scan processed via TCP");
-                }
-                Err(e) => {
-                    error!(%addr, tag_id, "Failed to process scan: {e}");
-                }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
             }
-        } else {
-            warn!(%addr, "Unknown message from sentinel: {trimmed}");
+
+            if let Some(payload) = trimmed.strip_prefix("LOG: ") {
+                // Insert log into DB — log errors instead of swallowing them
+                match sqlx::query_as::<_, (Uuid, chrono::DateTime<chrono::Utc>)>(
+                    "INSERT INTO sentinel_logs (sentinel_id, message) VALUES ($1, $2) RETURNING id, created_at",
+                )
+                .bind(sentinel_id)
+                .bind(payload)
+                .fetch_one(&state.db)
+                .await
+                {
+                    Ok((_log_id, created_at)) => {
+                        let _ = state.events.send(WsEvent::SentinelLog {
+                            sentinel_id,
+                            message: payload.to_string(),
+                            created_at: created_at.to_rfc3339(),
+                        });
+                    }
+                    Err(e) => {
+                        error!(%addr, sentinel_id = %sentinel_id, "Failed to insert sentinel log: {e}");
+                    }
+                }
+            } else if let Some(tag_id) = trimmed.strip_prefix("SCAN: ") {
+                if !is_valid_tag_id(tag_id) {
+                    warn!(%addr, tag_id, "Invalid tag_id format from sentinel");
+                    continue;
+                }
+
+                match process_scan(&state, tag_id).await {
+                    Ok(action) => {
+                        info!(%addr, tag_id, action, "Scan processed via TCP");
+                    }
+                    Err(e) => {
+                        error!(%addr, tag_id, "Failed to process scan: {e}");
+                    }
+                }
+            } else {
+                warn!(%addr, "Unknown message from sentinel: {trimmed}");
+            }
         }
+        Ok(())
+    }
+    .await;
+
+    if let Err(e) = &loop_result {
+        warn!(%addr, sentinel_id = %sentinel_id, "Message loop ended with error: {e}");
     }
 
-    // 4. Disconnect cleanup
+    // 4. Disconnect cleanup (always runs after auth, regardless of how the loop exited)
     info!(%addr, sentinel_id = %sentinel_id, "Sentinel disconnected");
 
-    sqlx::query("UPDATE sentinels SET connected = false WHERE id = $1")
+    if let Err(e) = sqlx::query("UPDATE sentinels SET connected = false WHERE id = $1")
         .bind(sentinel_id)
         .execute(&state.db)
-        .await?;
+        .await
+    {
+        error!(%addr, sentinel_id = %sentinel_id, "Failed to mark sentinel disconnected: {e}");
+    }
 
     let _ = state
         .events
