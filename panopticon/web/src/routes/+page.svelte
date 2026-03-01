@@ -23,7 +23,7 @@
 	interface LockUser {
 		id: number;
 		name: string;
-		user_type: number;
+		type: number;
 		status: number;
 		sync_status: number;
 	}
@@ -892,7 +892,7 @@
 													<span class="text-sm text-surface-200">{user.name}</span>
 													<!-- U-Tec user types: 1 = Admin, 3 = User (see bug #6 in README) -->
 													<span class="text-xs text-surface-500">
-														{user.user_type === 1 ? 'Admin' : user.user_type === 3 ? 'User' : `Type ${user.user_type}`}
+														{user.type === 1 ? 'Admin' : user.type === 3 ? 'User' : `Type ${user.type}`}
 													</span>
 												</div>
 											{/each}
