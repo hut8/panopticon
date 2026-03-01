@@ -389,13 +389,15 @@ async fn list_sentinels(
 
     let sentinels = rows
         .into_iter()
-        .map(|(id, name, connected, last_connected_at, created_at)| SentinelResponse {
-            id,
-            name,
-            connected,
-            last_connected_at: last_connected_at.map(|t| t.to_rfc3339()),
-            created_at: created_at.to_rfc3339(),
-        })
+        .map(
+            |(id, name, connected, last_connected_at, created_at)| SentinelResponse {
+                id,
+                name,
+                connected,
+                last_connected_at: last_connected_at.map(|t| t.to_rfc3339()),
+                created_at: created_at.to_rfc3339(),
+            },
+        )
         .collect();
 
     Ok(Json(sentinels))
