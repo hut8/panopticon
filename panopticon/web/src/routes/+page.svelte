@@ -42,6 +42,14 @@
 		created_at: string;
 	}
 
+	interface SentinelInfo {
+		id: string;
+		name: string;
+		connected: boolean;
+		last_connected_at: string | null;
+		created_at: string;
+	}
+
 	let utecStatus: UtecStatus | null = $state(null);
 	let isUtecAuthenticated = $derived(utecStatus?.authenticated ?? false);
 	let devices: DeviceInfo[] = $state([]);
@@ -62,6 +70,9 @@
 	let modeLoading = $state(false);
 	let cards: AccessCard[] = $state([]);
 	let scanLog: ScanLogEntry[] = $state([]);
+
+	// Sentinels
+	let sentinels: SentinelInfo[] = $state([]);
 
 	// Current user
 	let currentUserEmail: string | null = $state(null);
@@ -212,6 +223,15 @@
 		try {
 			const res = await fetch('/api/sentinel/scan-log');
 			if (res.ok) scanLog = await res.json();
+		} catch {
+			// ignore
+		}
+	}
+
+	async function loadSentinels() {
+		try {
+			const res = await fetch('/api/sentinel/sentinels');
+			if (res.ok) sentinels = await res.json();
 		} catch {
 			// ignore
 		}
@@ -447,6 +467,32 @@
 				);
 				break;
 			}
+			case 'sentinel_connected': {
+				const scId = msg.data.id as string;
+				const scName = msg.data.name as string;
+				const existing = sentinels.find((s) => s.id === scId);
+				if (existing) {
+					sentinels = sentinels.map((s) =>
+						s.id === scId ? { ...s, connected: true, last_connected_at: new Date().toISOString() } : s
+					);
+				} else {
+					sentinels = [...sentinels, {
+						id: scId,
+						name: scName,
+						connected: true,
+						last_connected_at: new Date().toISOString(),
+						created_at: new Date().toISOString()
+					}];
+				}
+				break;
+			}
+			case 'sentinel_disconnected': {
+				const sdId = msg.data.id as string;
+				sentinels = sentinels.map((s) =>
+					s.id === sdId ? { ...s, connected: false } : s
+				);
+				break;
+			}
 		}
 	}
 
@@ -516,6 +562,7 @@
 		loadSentinelMode();
 		loadCards();
 		loadScanLog();
+		loadSentinels();
 		loadNotificationPrefs();
 		initPushSubscription();
 		connectWebSocket();
@@ -962,8 +1009,40 @@
 				</div>
 			</div>
 
-			<!-- Right column: Enrolled Cards + Recent Scans -->
+			<!-- Right column: Sentinels + Enrolled Cards + Recent Scans -->
 			<div class="space-y-6">
+				<!-- Sentinels -->
+				<div class="card preset-filled-surface-900 space-y-4 p-6">
+					<h2 class="h5">Sentinels</h2>
+					{#if sentinels.length === 0}
+						<p class="text-sm text-surface-400">No sentinels registered yet.</p>
+					{:else}
+						<div class="space-y-2">
+							{#each sentinels as s (s.id)}
+								<a
+									href="/sentinel/{s.id}"
+									class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2 hover:bg-surface-700 transition-colors"
+								>
+									<div class="flex items-center gap-3">
+										<div
+											class="h-2 w-2 rounded-full {s.connected
+												? 'bg-success-500'
+												: 'bg-surface-600'}"
+										></div>
+										<div>
+											<p class="text-sm text-surface-200">{s.name}</p>
+											{#if s.last_connected_at}
+												<p class="text-xs text-surface-500">{formatDate(s.last_connected_at)}</p>
+											{/if}
+										</div>
+									</div>
+									<span class="text-xs text-surface-500">{s.connected ? 'Connected' : 'Disconnected'}</span>
+								</a>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
 				<!-- Enrolled Cards -->
 				<div class="card preset-filled-surface-900 space-y-4 p-6">
 					<h2 class="h5">Enrolled Cards</h2>
