@@ -6,11 +6,13 @@ resolver = "2"
 
 [dependencies]
 esp-idf-svc = { version = "0.51", features = ["std"] }
+embedded-svc = "0.28"
 anyhow = "1"
 log = "0.4"
 
 [build-dependencies]
 embuild = "0.33"
+dotenvy = "0.15"
 
 [profile.release]
 opt-level = "s"

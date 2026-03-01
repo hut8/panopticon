@@ -1,7 +1,7 @@
 [build]
-target = "riscv32imc-esp-espidf"
+target = "xtensa-esp32-espidf"
 
-[target.riscv32imc-esp-espidf]
+[target.xtensa-esp32-espidf]
 linker = "ldproxy"
 runner = "espflash flash --monitor"
 
@@ -9,7 +9,7 @@ runner = "espflash flash --monitor"
 build-std = ["std", "panic_abort"]
 
 [env]
-MCU = "esp32c3"
+MCU = "esp32"
 # Set these environment variables before building, or use a .env file:
 # WIFI_SSID = "your-wifi-ssid"
 # WIFI_PASS = "your-wifi-password"
