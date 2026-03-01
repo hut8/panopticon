@@ -3,6 +3,7 @@ CREATE TABLE sentinels (
     name TEXT NOT NULL DEFAULT 'sentinel',
     secret TEXT NOT NULL UNIQUE,
     connected BOOLEAN NOT NULL DEFAULT FALSE,
+    active_connections INTEGER NOT NULL DEFAULT 0,
     last_connected_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

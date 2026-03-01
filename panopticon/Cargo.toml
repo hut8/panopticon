@@ -32,3 +32,4 @@ web-push = { version = "0.11", default-features = false }
 openssl = { version = "0.10", features = ["vendored"] }
 maxminddb = "0.24"
 flate2 = "1"
+memchr = "2"
