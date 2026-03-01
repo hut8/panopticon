@@ -114,7 +114,7 @@
 					message: msg.data.message as string,
 					created_at: msg.data.created_at as string
 				};
-				logs = [newLog, ...logs];
+				logs = [newLog, ...logs].slice(0, 1000);
 				break;
 			}
 			case 'sentinel_connected': {

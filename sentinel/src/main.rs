@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     // Set up dual-drain logger (serial + TCP to panopticon)
     let tcp_handle = logger::DualLogger::init();
 
-    info!("rfid-door starting up");
+    info!("sentinel starting up");
 
     // Take peripherals
     let peripherals = Peripherals::take()?;
@@ -55,11 +55,14 @@ fn main() -> Result<()> {
         use std::ffi::CString;
         let hostname = CString::new("sentinel").unwrap();
         let netif = wifi.wifi().sta_netif();
-        unsafe {
+        let err = unsafe {
             esp_idf_svc::sys::esp_netif_set_hostname(
                 netif.handle(),
                 hostname.as_ptr(),
-            );
+            )
+        };
+        if err != esp_idf_svc::sys::ESP_OK {
+            error!("Failed to set hostname: ESP error {err}");
         }
     }
     connect_wifi(&mut wifi)?;
@@ -90,8 +93,16 @@ fn main() -> Result<()> {
 
     // ── Main loop ──────────────────────────────────────────────────────────
     let mut last_scan: Option<(TagId, std::time::Instant)> = None;
+    let mut last_reconnect_check = std::time::Instant::now();
+    const RECONNECT_INTERVAL: Duration = Duration::from_secs(30);
 
     loop {
+        // Periodically ensure we're connected so logs resume without a scan
+        if last_reconnect_check.elapsed() >= RECONNECT_INTERVAL {
+            ensure_connected(tcp_handle);
+            last_reconnect_check = std::time::Instant::now();
+        }
+
         if let Some(tag) = reader.scan_for_tag() {
             let tag_str = format_tag_id(&tag);
             info!("Tag scanned: {}", tag_str);
@@ -147,7 +158,28 @@ fn connect_panopticon(tcp_handle: logger::TcpHandle) {
     let addr = format!("{}:{}", PANOPTICON_HOST, PANOPTICON_PORT);
     info!("Connecting to panopticon at {addr}...");
 
-    match TcpStream::connect(&addr) {
+    let sock_addr: std::net::SocketAddr = match addr.parse() {
+        Ok(a) => a,
+        Err(_) => {
+            // Resolve hostname manually for non-IP addresses
+            use std::net::ToSocketAddrs;
+            match addr.to_socket_addrs() {
+                Ok(mut addrs) => match addrs.next() {
+                    Some(a) => a,
+                    None => {
+                        error!("DNS resolution returned no addresses for {addr}");
+                        return;
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to resolve {addr}: {e}");
+                    return;
+                }
+            }
+        }
+    };
+
+    match TcpStream::connect_timeout(&sock_addr, Duration::from_secs(10)) {
         Ok(mut stream) => {
             // Send authentication
             let authz = format!("AUTHZ: {}\n", SENTINEL_SECRET);
@@ -188,14 +220,22 @@ fn send_scan(tcp_handle: logger::TcpHandle, tag_id: &str) {
     let msg = format!("SCAN: {}\n", tag_id);
 
     let mut reconnected = false;
-    if let Ok(mut guard) = tcp_handle.lock() {
-        if let Some(ref mut stream) = *guard {
-            if stream.write_all(msg.as_bytes()).is_ok() {
-                return;
+    match tcp_handle.lock() {
+        Ok(mut guard) => {
+            if let Some(ref mut stream) = *guard {
+                if stream.write_all(msg.as_bytes()).is_ok() {
+                    return;
+                }
+                // Write failed — clear and reconnect
+                *guard = None;
+                reconnected = true;
+            } else {
+                warn!("Cannot send SCAN: no TCP stream available");
             }
-            // Write failed — clear and reconnect
-            *guard = None;
-            reconnected = true;
+        }
+        Err(e) => {
+            error!("Cannot send SCAN: TCP lock poisoned: {e}");
+            return;
         }
     }
 
@@ -204,12 +244,19 @@ fn send_scan(tcp_handle: logger::TcpHandle, tag_id: &str) {
         connect_panopticon(tcp_handle);
 
         // Retry once after reconnect
-        if let Ok(mut guard) = tcp_handle.lock() {
-            if let Some(ref mut stream) = *guard {
-                if let Err(e) = stream.write_all(msg.as_bytes()) {
-                    error!("Failed to send SCAN after reconnect: {e}");
-                    *guard = None;
+        match tcp_handle.lock() {
+            Ok(mut guard) => {
+                if let Some(ref mut stream) = *guard {
+                    if let Err(e) = stream.write_all(msg.as_bytes()) {
+                        error!("Failed to send SCAN after reconnect: {e}");
+                        *guard = None;
+                    }
+                } else {
+                    error!("SCAN dropped: still no TCP stream after reconnect");
                 }
+            }
+            Err(e) => {
+                error!("SCAN dropped: TCP lock poisoned after reconnect: {e}");
             }
         }
     }

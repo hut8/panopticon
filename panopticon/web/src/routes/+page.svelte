@@ -1020,7 +1020,7 @@
 						<div class="space-y-2">
 							{#each sentinels as s (s.id)}
 								<a
-									href="/sentinel/{s.id}"
+									href={`/sentinel/${s.id}`}
 									class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2 hover:bg-surface-700 transition-colors"
 								>
 									<div class="flex items-center gap-3">

@@ -30,7 +30,7 @@ impl DualLogger {
         });
 
         // Safety: we only call this once during init
-        let _ = log::set_logger(Box::leak(logger));
+        log::set_logger(Box::leak(logger)).expect("logger already set");
         log::set_max_level(log::LevelFilter::Info);
 
         &TCP_STREAM
@@ -53,12 +53,14 @@ impl Log for DualLogger {
         // Try to write to TCP (silently skip on failure to avoid recursion)
         if let Ok(mut guard) = self.tcp.try_lock() {
             if let Some(ref mut stream) = *guard {
-                let line = format!(
-                    "LOG: [{} {}] {}\n",
+                // Sanitize newlines so a single LOG line can't be split/injected
+                let msg = format!(
+                    "LOG: [{} {}] {}",
                     record.level(),
                     record.target(),
                     record.args()
                 );
+                let line = msg.replace('\r', "\\r").replace('\n', "\\n") + "\n";
                 if stream.write_all(line.as_bytes()).is_err() {
                     // Connection lost — clear it so main loop can detect & reconnect
                     *guard = None;
