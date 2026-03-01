@@ -41,6 +41,18 @@ pub enum WsEvent {
         device_id: String,
         lock_state: String,
     },
+    SentinelConnected {
+        id: Uuid,
+        name: String,
+    },
+    SentinelDisconnected {
+        id: Uuid,
+    },
+    SentinelLog {
+        sentinel_id: Uuid,
+        message: String,
+        created_at: String,
+    },
 }
 
 impl WsEvent {

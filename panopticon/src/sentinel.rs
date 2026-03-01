@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{delete, get, post},
     Json, Router,
@@ -53,6 +53,28 @@ struct ScanLogEntry {
     created_at: String,
 }
 
+#[derive(Serialize)]
+pub struct SentinelResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub connected: bool,
+    pub last_connected_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Serialize)]
+pub struct SentinelLogEntry {
+    pub id: Uuid,
+    pub sentinel_id: Uuid,
+    pub message: String,
+    pub created_at: String,
+}
+
+#[derive(Deserialize)]
+struct LogsQuery {
+    limit: Option<i64>,
+}
+
 // ── Router ──────────────────────────────────────────────────────────────────
 
 pub fn router() -> Router<AppState> {
@@ -63,12 +85,14 @@ pub fn router() -> Router<AppState> {
         .route("/cards", get(list_cards))
         .route("/cards/{id}", delete(remove_card))
         .route("/scan-log", get(scan_log))
+        .route("/sentinels", get(list_sentinels))
+        .route("/sentinels/{id}/logs", get(sentinel_logs))
 }
 
 // ── Tag ID validation ───────────────────────────────────────────────────────
 
 /// Validate tag_id format: 5 colon-separated uppercase hex bytes (e.g. "80:00:48:23:4C")
-fn is_valid_tag_id(tag_id: &str) -> bool {
+pub fn is_valid_tag_id(tag_id: &str) -> bool {
     let parts: Vec<&str> = tag_id.split(':').collect();
     if parts.len() != 5 {
         return false;
@@ -81,57 +105,44 @@ fn is_valid_tag_id(tag_id: &str) -> bool {
     })
 }
 
-// ── Handlers ────────────────────────────────────────────────────────────────
+// ── Shared scan logic ───────────────────────────────────────────────────────
 
-async fn handle_scan(
-    State(state): State<AppState>,
-    Json(req): Json<ScanRequest>,
-) -> Result<Json<ScanResponse>, ApiError> {
-    // 1. Validate shared secret
-    if req.secret != state.sentinel_secret {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid secret"));
-    }
-
-    // 2. Validate tag_id format
-    if !is_valid_tag_id(&req.tag_id) {
-        return Err((StatusCode::BAD_REQUEST, "Invalid tag_id format"));
-    }
-
-    // 3. Read current mode
+/// Core scan processing logic shared by both the HTTP handler and TCP handler.
+/// Returns the action string ("enrolled", "granted", or "denied").
+pub async fn process_scan(state: &AppState, tag_id: &str) -> Result<String, String> {
+    // Read current mode
     let mode: String =
         sqlx::query_scalar("SELECT value FROM system_config WHERE key = 'sentinel_mode'")
             .fetch_one(&state.db)
             .await
             .map_err(|e| {
                 error!("Failed to read sentinel mode: {e:#}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+                "Database error".to_string()
             })?;
 
     let action = match mode.as_str() {
         "enroll" => {
-            // 4. Enroll mode: insert card
             sqlx::query("INSERT INTO access_cards (tag_id) VALUES ($1) ON CONFLICT DO NOTHING")
-                .bind(&req.tag_id)
+                .bind(tag_id)
                 .execute(&state.db)
                 .await
                 .map_err(|e| {
                     error!("Failed to enroll card: {e:#}");
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+                    "Database error".to_string()
                 })?;
 
-            info!(tag_id = %req.tag_id, "Card enrolled");
+            info!(tag_id = %tag_id, "Card enrolled");
             "enrolled"
         }
         _ => {
-            // 5. Guard mode: check access
             let exists: bool =
                 sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM access_cards WHERE tag_id = $1)")
-                    .bind(&req.tag_id)
+                    .bind(tag_id)
                     .fetch_one(&state.db)
                     .await
                     .map_err(|e| {
                         error!("Failed to check card: {e:#}");
-                        (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+                        "Database error".to_string()
                     })?;
 
             if exists {
@@ -142,10 +153,10 @@ async fn handle_scan(
                             if let Some(lock) = locks.first() {
                                 match client.unlock(lock).await {
                                     Ok(_) => {
-                                        info!(tag_id = %req.tag_id, lock = %lock.name, "Door unlocked")
+                                        info!(tag_id = %tag_id, lock = %lock.name, "Door unlocked")
                                     }
                                     Err(e) => {
-                                        error!(tag_id = %req.tag_id, "Failed to unlock: {e:#}")
+                                        error!(tag_id = %tag_id, "Failed to unlock: {e:#}")
                                     }
                                 }
                             } else {
@@ -158,41 +169,41 @@ async fn handle_scan(
                     warn!("U-Tec not connected — cannot unlock");
                 }
 
-                info!(tag_id = %req.tag_id, "Access granted");
+                info!(tag_id = %tag_id, "Access granted");
                 "granted"
             } else {
-                warn!(tag_id = %req.tag_id, "Access denied");
+                warn!(tag_id = %tag_id, "Access denied");
                 "denied"
             }
         }
     };
 
-    // 6. Log to scan_log
+    // Log to scan_log
     let scan_row: (Uuid, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
         "INSERT INTO scan_log (tag_id, action) VALUES ($1, $2) RETURNING id, created_at",
     )
-    .bind(&req.tag_id)
+    .bind(tag_id)
     .bind(action)
     .fetch_one(&state.db)
     .await
     .map_err(|e| {
         error!("Failed to log scan: {e:#}");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+        "Database error".to_string()
     })?;
 
     let _ = state.events.send(WsEvent::Scan {
-        tag_id: req.tag_id.clone(),
+        tag_id: tag_id.to_string(),
         action: action.to_string(),
         created_at: scan_row.1.to_rfc3339(),
     });
 
-    // 7. If enrolled, also broadcast the new card
+    // If enrolled, also broadcast the new card
     if action == "enrolled" {
         let card: Option<(Uuid, String, Option<String>, chrono::DateTime<chrono::Utc>)> =
             sqlx::query_as(
                 "SELECT id, tag_id, label, created_at FROM access_cards WHERE tag_id = $1",
             )
-            .bind(&req.tag_id)
+            .bind(tag_id)
             .fetch_optional(&state.db)
             .await
             .ok()
@@ -208,9 +219,28 @@ async fn handle_scan(
         }
     }
 
-    Ok(Json(ScanResponse {
-        action: action.to_string(),
-    }))
+    Ok(action.to_string())
+}
+
+// ── Handlers ────────────────────────────────────────────────────────────────
+
+async fn handle_scan(
+    State(state): State<AppState>,
+    Json(req): Json<ScanRequest>,
+) -> Result<Json<ScanResponse>, ApiError> {
+    if req.secret != state.sentinel_secret {
+        return Err((StatusCode::UNAUTHORIZED, "Invalid secret"));
+    }
+
+    if !is_valid_tag_id(&req.tag_id) {
+        return Err((StatusCode::BAD_REQUEST, "Invalid tag_id format"));
+    }
+
+    let action = process_scan(&state, &req.tag_id)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database error"))?;
+
+    Ok(Json(ScanResponse { action }))
 }
 
 async fn get_mode(
@@ -328,6 +358,80 @@ async fn scan_log(
             id,
             tag_id,
             action,
+            created_at: created_at.to_rfc3339(),
+        })
+        .collect();
+
+    Ok(Json(entries))
+}
+
+// ── Sentinel endpoints ──────────────────────────────────────────────────────
+
+type SentinelRow = (
+    Uuid,
+    String,
+    bool,
+    Option<chrono::DateTime<chrono::Utc>>,
+    chrono::DateTime<chrono::Utc>,
+);
+
+async fn list_sentinels(
+    _user: AuthUser,
+    State(state): State<AppState>,
+) -> Result<Json<Vec<SentinelResponse>>, ApiError> {
+    let rows: Vec<SentinelRow> = sqlx::query_as(
+        "SELECT id, name, connected, last_connected_at, created_at FROM sentinels ORDER BY created_at",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| {
+        error!("Failed to list sentinels: {e:#}");
+        (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+    })?;
+
+    let sentinels = rows
+        .into_iter()
+        .map(
+            |(id, name, connected, last_connected_at, created_at)| SentinelResponse {
+                id,
+                name,
+                connected,
+                last_connected_at: last_connected_at.map(|t| t.to_rfc3339()),
+                created_at: created_at.to_rfc3339(),
+            },
+        )
+        .collect();
+
+    Ok(Json(sentinels))
+}
+
+async fn sentinel_logs(
+    _user: AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<LogsQuery>,
+) -> Result<Json<Vec<SentinelLogEntry>>, ApiError> {
+    let limit = query.limit.unwrap_or(200).min(1000);
+
+    let rows: Vec<(Uuid, Uuid, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT id, sentinel_id, message, created_at FROM sentinel_logs \
+         WHERE sentinel_id = $1 ORDER BY created_at DESC LIMIT $2",
+    )
+    .bind(id)
+    .bind(limit)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| {
+        error!("Failed to read sentinel logs: {e:#}");
+        (StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+    })?;
+
+    let entries = rows
+        .into_iter()
+        .map(|(id, sentinel_id, message, created_at)| SentinelLogEntry {
+            id,
+            sentinel_id,
+            message,
             created_at: created_at.to_rfc3339(),
         })
         .collect();

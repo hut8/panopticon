@@ -10,6 +10,7 @@ mod oauth;
 mod push;
 mod sentinel;
 mod session;
+mod tcp;
 pub mod utec;
 mod webhook;
 mod ws;
@@ -94,6 +95,9 @@ async fn main() -> anyhow::Result<()> {
         sentinel_secret,
         events: events_tx,
     };
+
+    // Spawn sentinel TCP listener on port 8008
+    tokio::spawn(tcp::spawn_tcp_listener(state.clone()));
 
     // Routes behind the IP whitelist (all normal app routes)
     let protected = Router::new()

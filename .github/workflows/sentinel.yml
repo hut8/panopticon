@@ -14,8 +14,10 @@ env:
   CARGO_TERM_COLOR: always
   WIFI_SSID: "ci-placeholder"
   WIFI_PASS: "ci-placeholder"
-  PANOPTICON_URL: "http://localhost:1337"
+  PANOPTICON_HOST: "localhost"
+  PANOPTICON_PORT: "8008"
   SENTINEL_SECRET: "ci-placeholder"
+  SENTINEL_HOSTNAME: "sentinel-ci"
 
 jobs:
   check:

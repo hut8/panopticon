@@ -1901,6 +1901,7 @@ dependencies = [
  "ipnet",
  "lettre",
  "maxminddb",
+ "memchr",
  "mime_guess",
  "openssl",
  "rand 0.8.5",

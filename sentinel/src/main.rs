@@ -1,16 +1,15 @@
 mod buzzer;
+mod logger;
 mod rfiduino;
 
+use std::io::Write;
+use std::net::TcpStream;
 use std::time::Duration;
 
-use anyhow::{bail, Result};
-use embedded_svc::http::client::Client as HttpClient;
-use embedded_svc::io::Write;
+use anyhow::Result;
 use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::peripherals::Peripherals;
-use esp_idf_svc::http::client::{Configuration as HttpConfig, EspHttpConnection};
-use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
 use log::{error, info, warn};
@@ -19,10 +18,12 @@ use rfiduino::{format_tag_id, format_tag_id_hex, RFIDuino, TagId};
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
-const WIFI_SSID: &str = env!("WIFI_SSID");
-const WIFI_PASS: &str = env!("WIFI_PASS");
-const PANOPTICON_URL: &str = env!("PANOPTICON_URL");
-const SENTINEL_SECRET: &str = env!("SENTINEL_SECRET");
+const WIFI_SSID: &str = env!("WIFI_SSID", "missing WIFI_SSID — copy sentinel/.env.example to sentinel/.env and fill in values");
+const WIFI_PASS: &str = env!("WIFI_PASS", "missing WIFI_PASS — copy sentinel/.env.example to sentinel/.env and fill in values");
+const PANOPTICON_HOST: &str = env!("PANOPTICON_HOST", "missing PANOPTICON_HOST — copy sentinel/.env.example to sentinel/.env and fill in values");
+const PANOPTICON_PORT: &str = env!("PANOPTICON_PORT", "missing PANOPTICON_PORT — copy sentinel/.env.example to sentinel/.env and fill in values");
+const SENTINEL_SECRET: &str = env!("SENTINEL_SECRET", "missing SENTINEL_SECRET — copy sentinel/.env.example to sentinel/.env and fill in values");
+const SENTINEL_HOSTNAME: &str = env!("SENTINEL_HOSTNAME", "missing SENTINEL_HOSTNAME — copy sentinel/.env.example to sentinel/.env and fill in values");
 
 /// Cooldown between successful scans of the same tag (prevents rapid re-triggering).
 const SCAN_COOLDOWN: Duration = Duration::from_secs(5);
@@ -32,9 +33,11 @@ const SCAN_COOLDOWN: Duration = Duration::from_secs(5);
 fn main() -> Result<()> {
     // ESP-IDF boilerplate
     esp_idf_svc::sys::link_patches();
-    EspLogger::initialize_default();
 
-    info!("rfid-door starting up");
+    // Set up dual-drain logger (serial + TCP to panopticon)
+    let tcp_handle = logger::DualLogger::init();
+
+    info!("sentinel starting up");
 
     // Take peripherals
     let peripherals = Peripherals::take()?;
@@ -47,6 +50,22 @@ fn main() -> Result<()> {
         EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?,
         sys_loop,
     )?;
+    // Set hostname for mDNS/DHCP identification
+    {
+        use esp_idf_svc::handle::RawHandle;
+        use std::ffi::CString;
+        let hostname = CString::new(SENTINEL_HOSTNAME).unwrap();
+        let netif = wifi.wifi().sta_netif();
+        let err = unsafe {
+            esp_idf_svc::sys::esp_netif_set_hostname(
+                netif.handle(),
+                hostname.as_ptr(),
+            )
+        };
+        if err != esp_idf_svc::sys::ESP_OK {
+            error!("Failed to set hostname: ESP error {err}");
+        }
+    }
     connect_wifi(&mut wifi)?;
     let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
     info!("WiFi connected — IP: {}", ip_info.ip);
@@ -70,10 +89,21 @@ fn main() -> Result<()> {
     )?;
     info!("RFIDuino ready — scan a tag");
 
+    // ── Connect to panopticon ─────────────────────────────────────────────
+    connect_panopticon(tcp_handle);
+
     // ── Main loop ──────────────────────────────────────────────────────────
     let mut last_scan: Option<(TagId, std::time::Instant)> = None;
+    let mut last_reconnect_check = std::time::Instant::now();
+    const RECONNECT_INTERVAL: Duration = Duration::from_secs(30);
 
     loop {
+        // Periodically ensure we're connected so logs resume without a scan
+        if last_reconnect_check.elapsed() >= RECONNECT_INTERVAL {
+            ensure_connected(tcp_handle);
+            last_reconnect_check = std::time::Instant::now();
+        }
+
         if let Some(tag) = reader.scan_for_tag() {
             let tag_str = format_tag_id(&tag);
             info!("Tag scanned: {}", tag_str);
@@ -86,11 +116,7 @@ fn main() -> Result<()> {
 
             if should_trigger {
                 let hex_id = format_tag_id_hex(&tag);
-                match report_scan(&hex_id) {
-                    Ok(true) => info!("Access granted or enrolled for {}", hex_id),
-                    Ok(false) => warn!("Access denied for {}", hex_id),
-                    Err(e) => error!("Failed to report scan: {e}"),
-                }
+                send_scan(tcp_handle, &hex_id);
                 last_scan = Some((tag, std::time::Instant::now()));
             }
         }
@@ -125,44 +151,114 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {
     Ok(())
 }
 
-// ── Panopticon scan report ─────────────────────────────────────────────────
+// ── Panopticon TCP connection ─────────────────────────────────────────────
 
-/// POST the scanned tag to panopticon. Returns true if action is "granted" or "enrolled".
-fn report_scan(tag_id: &str) -> Result<bool> {
-    let url = format!("{}/api/sentinel/scan", PANOPTICON_URL);
-    let body = format!(
-        r#"{{"tag_id":"{}","secret":"{}"}}"#,
-        tag_id, SENTINEL_SECRET
-    );
-    let content_length = body.len().to_string();
+/// Connect to panopticon and send AUTHZ. Stores the stream in the shared handle
+/// so the logger can also write to it.
+fn connect_panopticon(tcp_handle: logger::TcpHandle) {
+    let addr = format!("{}:{}", PANOPTICON_HOST, PANOPTICON_PORT);
+    info!("Connecting to panopticon at {addr}...");
 
-    let headers = [
-        ("Content-Type", "application/json"),
-        ("Content-Length", content_length.as_str()),
-    ];
+    let sock_addr: std::net::SocketAddr = match addr.parse() {
+        Ok(a) => a,
+        Err(_) => {
+            // Resolve hostname manually for non-IP addresses
+            use std::net::ToSocketAddrs;
+            match addr.to_socket_addrs() {
+                Ok(mut addrs) => match addrs.next() {
+                    Some(a) => a,
+                    None => {
+                        error!("DNS resolution returned no addresses for {addr}");
+                        return;
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to resolve {addr}: {e}");
+                    return;
+                }
+            }
+        }
+    };
 
-    let mut client = HttpClient::wrap(EspHttpConnection::new(&HttpConfig {
-        ..Default::default()
-    })?);
+    match TcpStream::connect_timeout(&sock_addr, Duration::from_secs(10)) {
+        Ok(mut stream) => {
+            // Send authentication
+            let authz = format!("AUTHZ: {}\n", SENTINEL_SECRET);
+            if let Err(e) = stream.write_all(authz.as_bytes()) {
+                error!("Failed to send AUTHZ: {e}");
+                return;
+            }
 
-    let mut request = client.post(&url, &headers)?;
-    request.write_all(body.as_bytes())?;
-    request.flush()?;
+            info!("Connected to panopticon");
 
-    let response = request.submit()?;
-    let status = response.status();
+            // Store in shared handle (logger will start sending LOG messages)
+            if let Ok(mut guard) = tcp_handle.lock() {
+                *guard = Some(stream);
+            }
+        }
+        Err(e) => {
+            error!("Failed to connect to panopticon: {e}");
+        }
+    }
+}
 
-    if !(200..300).contains(&(status as i32)) {
-        bail!("Panopticon returned HTTP {status}");
+/// Reconnect to panopticon if disconnected, then send AUTHZ.
+fn ensure_connected(tcp_handle: logger::TcpHandle) {
+    let connected = tcp_handle
+        .lock()
+        .map(|g| g.is_some())
+        .unwrap_or(false);
+
+    if !connected {
+        connect_panopticon(tcp_handle);
+    }
+}
+
+/// Send a SCAN message over the TCP connection. Reconnects if needed.
+fn send_scan(tcp_handle: logger::TcpHandle, tag_id: &str) {
+    ensure_connected(tcp_handle);
+
+    let msg = format!("SCAN: {}\n", tag_id);
+
+    let mut reconnected = false;
+    match tcp_handle.lock() {
+        Ok(mut guard) => {
+            if let Some(ref mut stream) = *guard {
+                if stream.write_all(msg.as_bytes()).is_ok() {
+                    return;
+                }
+                // Write failed — clear and reconnect
+                *guard = None;
+                reconnected = true;
+            } else {
+                warn!("Cannot send SCAN: no TCP stream available");
+            }
+        }
+        Err(e) => {
+            error!("Cannot send SCAN: TCP lock poisoned: {e}");
+            return;
+        }
     }
 
-    // Read response body to check the action
-    let mut buf = [0u8; 256];
-    let mut reader = response;
-    let len = embedded_svc::io::Read::read(&mut reader, &mut buf).unwrap_or(0);
-    let body_str = core::str::from_utf8(&buf[..len]).unwrap_or("");
+    if reconnected {
+        warn!("TCP write failed, reconnecting...");
+        connect_panopticon(tcp_handle);
 
-    // Simple check — look for "granted" or "enrolled" in the response
-    let success = body_str.contains("granted") || body_str.contains("enrolled");
-    Ok(success)
+        // Retry once after reconnect
+        match tcp_handle.lock() {
+            Ok(mut guard) => {
+                if let Some(ref mut stream) = *guard {
+                    if let Err(e) = stream.write_all(msg.as_bytes()) {
+                        error!("Failed to send SCAN after reconnect: {e}");
+                        *guard = None;
+                    }
+                } else {
+                    error!("SCAN dropped: still no TCP stream after reconnect");
+                }
+            }
+            Err(e) => {
+                error!("SCAN dropped: TCP lock poisoned after reconnect: {e}");
+            }
+        }
+    }
 }
