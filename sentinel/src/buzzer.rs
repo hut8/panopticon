@@ -45,7 +45,6 @@ const KOROBEINIKI: &[Note] = &[
 /// Play the Tetris theme on the piezo buzzer at startup.
 ///
 /// Takes ownership of the LEDC timer0, channel0, and the buzzer GPIO pin.
-/// Returns them all so they can be reused later if needed.
 pub fn play_startup_melody(
     timer: TIMER0,
     channel: CHANNEL0,
