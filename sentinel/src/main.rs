@@ -47,6 +47,7 @@ fn main() -> Result<()> {
         EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?,
         sys_loop,
     )?;
+    wifi.wifi().sta_netif_mut().set_hostname("sentinel")?;
     connect_wifi(&mut wifi)?;
     let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
     info!("WiFi connected — IP: {}", ip_info.ip);
