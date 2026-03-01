@@ -23,6 +23,7 @@ const WIFI_PASS: &str = env!("WIFI_PASS");
 const PANOPTICON_HOST: &str = env!("PANOPTICON_HOST");
 const PANOPTICON_PORT: &str = env!("PANOPTICON_PORT");
 const SENTINEL_SECRET: &str = env!("SENTINEL_SECRET");
+const SENTINEL_HOSTNAME: &str = env!("SENTINEL_HOSTNAME");
 
 /// Cooldown between successful scans of the same tag (prevents rapid re-triggering).
 const SCAN_COOLDOWN: Duration = Duration::from_secs(5);
@@ -53,7 +54,7 @@ fn main() -> Result<()> {
     {
         use esp_idf_svc::handle::RawHandle;
         use std::ffi::CString;
-        let hostname = CString::new("sentinel").unwrap();
+        let hostname = CString::new(SENTINEL_HOSTNAME).unwrap();
         let netif = wifi.wifi().sta_netif();
         let err = unsafe {
             esp_idf_svc::sys::esp_netif_set_hostname(

@@ -1,4 +1,4 @@
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -10,19 +10,83 @@ use crate::AppState;
 /// Maximum allowed line length from a sentinel (8 KiB).
 const MAX_LINE_LENGTH: usize = 8192;
 
+/// Read a single line, rejecting any line longer than `MAX_LINE_LENGTH` at the
+/// I/O level (the buffer is never allowed to grow beyond that limit).
+/// Returns `Ok(0)` on EOF.
+async fn read_limited_line(
+    reader: &mut BufReader<impl AsyncRead + Unpin>,
+    buf: &mut String,
+) -> std::io::Result<usize> {
+    buf.clear();
+    let mut total = 0usize;
+    loop {
+        let available = reader.fill_buf().await?;
+        if available.is_empty() {
+            return Ok(total); // EOF
+        }
+        // Find the newline within the available chunk (or take it all).
+        let (chunk, found_newline) = match memchr::memchr(b'\n', available) {
+            Some(pos) => (&available[..=pos], true),
+            None => (available, false),
+        };
+        total += chunk.len();
+        if total > MAX_LINE_LENGTH {
+            // Consume everything up to (and including) the newline so the
+            // stream is left in a clean state for the next read.
+            let consume_len = chunk.len();
+            reader.consume(consume_len);
+            if !found_newline {
+                // Drain the rest of the oversized line.
+                loop {
+                    let rest = reader.fill_buf().await?;
+                    if rest.is_empty() {
+                        break;
+                    }
+                    if let Some(pos) = memchr::memchr(b'\n', rest) {
+                        reader.consume(pos + 1);
+                        break;
+                    }
+                    let n = rest.len();
+                    reader.consume(n);
+                }
+            }
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("line exceeds {MAX_LINE_LENGTH} byte limit"),
+            ));
+        }
+        // SAFETY: sentinel protocol is text-based; non-UTF-8 is a protocol error.
+        let chunk_str = match std::str::from_utf8(chunk) {
+            Ok(s) => s,
+            Err(_) => {
+                let consume_len = chunk.len();
+                reader.consume(consume_len);
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "non-UTF-8 data on sentinel connection",
+                ));
+            }
+        };
+        buf.push_str(chunk_str);
+        let consume_len = chunk.len();
+        reader.consume(consume_len);
+        if found_newline {
+            return Ok(total);
+        }
+    }
+}
+
 /// Bind to a configurable address and accept sentinel TCP connections.
+///
+/// # Panics
+/// Panics if the TCP listener cannot bind, since the sentinel interface is
+/// required for correct operation.
 pub async fn spawn_tcp_listener(state: AppState) {
     let addr = std::env::var("SENTINEL_TCP_ADDR").unwrap_or_else(|_| "0.0.0.0:8008".to_string());
-    let listener = match TcpListener::bind(&addr).await {
-        Ok(l) => {
-            info!("Sentinel TCP listener on {addr}");
-            l
-        }
-        Err(e) => {
-            error!("Failed to bind sentinel TCP listener on {addr}: {e}");
-            return;
-        }
-    };
+    let listener = TcpListener::bind(&addr)
+        .await
+        .unwrap_or_else(|e| panic!("Failed to bind sentinel TCP listener on {addr}: {e}"));
+    info!("Sentinel TCP listener on {addr}");
 
     loop {
         match listener.accept().await {
@@ -51,23 +115,17 @@ async fn handle_connection(
     let mut line = String::new();
 
     // 1. Expect AUTHZ as the first message (with 10-second timeout)
-    line.clear();
-    let n = match tokio::time::timeout(
+    match tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        reader.read_line(&mut line),
+        read_limited_line(&mut reader, &mut line),
     )
     .await
     {
-        Ok(Ok(n)) => n,
+        Ok(Ok(0)) => anyhow::bail!("Connection closed before AUTHZ"),
+        Ok(Ok(_)) => {}
         Ok(Err(e)) => anyhow::bail!("Read error during AUTHZ: {e}"),
         Err(_) => anyhow::bail!("Timed out waiting for AUTHZ"),
     };
-    if n == 0 {
-        anyhow::bail!("Connection closed before AUTHZ");
-    }
-    if line.len() > MAX_LINE_LENGTH {
-        anyhow::bail!("AUTHZ line exceeds maximum length");
-    }
 
     let trimmed = line.trim();
     let secret = trimmed
@@ -98,11 +156,14 @@ async fn handle_connection(
         }
     };
 
-    // Mark connected
-    sqlx::query("UPDATE sentinels SET connected = true, last_connected_at = now() WHERE id = $1")
-        .bind(sentinel_id)
-        .execute(&state.db)
-        .await?;
+    // Increment active connection count instead of setting a boolean.
+    sqlx::query(
+        "UPDATE sentinels SET connected = true, last_connected_at = now(), \
+         active_connections = active_connections + 1 WHERE id = $1",
+    )
+    .bind(sentinel_id)
+    .execute(&state.db)
+    .await?;
 
     info!(%addr, sentinel_id = %sentinel_id, name = %sentinel_name, "Sentinel authenticated");
 
@@ -114,20 +175,17 @@ async fn handle_connection(
     // 3. Read messages in a loop — use a closure-like pattern to guarantee cleanup
     let loop_result: anyhow::Result<()> = async {
         loop {
-            line.clear();
-            let n = match reader.read_line(&mut line).await {
-                Ok(n) => n,
+            match read_limited_line(&mut reader, &mut line).await {
+                Ok(0) => break, // EOF
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+                    warn!(%addr, sentinel_id = %sentinel_id, "Bad line from sentinel: {e}");
+                    continue;
+                }
                 Err(e) => {
                     warn!(%addr, sentinel_id = %sentinel_id, "Read error: {e}");
                     break;
                 }
-            };
-            if n == 0 {
-                break; // Connection closed
-            }
-            if line.len() > MAX_LINE_LENGTH {
-                warn!(%addr, sentinel_id = %sentinel_id, "Line exceeds max length ({} bytes), dropping", line.len());
-                continue;
             }
 
             let trimmed = line.trim();
@@ -185,10 +243,14 @@ async fn handle_connection(
     // 4. Disconnect cleanup (always runs after auth, regardless of how the loop exited)
     info!(%addr, sentinel_id = %sentinel_id, "Sentinel disconnected");
 
-    if let Err(e) = sqlx::query("UPDATE sentinels SET connected = false WHERE id = $1")
-        .bind(sentinel_id)
-        .execute(&state.db)
-        .await
+    // Decrement connection count; mark disconnected only when no sessions remain.
+    if let Err(e) = sqlx::query(
+        "UPDATE sentinels SET active_connections = GREATEST(active_connections - 1, 0), \
+         connected = (active_connections - 1 > 0) WHERE id = $1",
+    )
+    .bind(sentinel_id)
+    .execute(&state.db)
+    .await
     {
         error!(%addr, sentinel_id = %sentinel_id, "Failed to mark sentinel disconnected: {e}");
     }
