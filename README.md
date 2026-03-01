@@ -2,25 +2,25 @@
 
 RFID-based door access control system with two components:
 
-- **sentinel/** — ESP32-C3 firmware (Rust). Reads 125kHz RFID tags via a RFIDuino Shield v1.2 and triggers IFTTT webhooks over WiFi.
+- **sentinel/** — ESP32 firmware (Rust). Reads 125kHz RFID tags via a RFIDuino Shield v1.2 and reports scans to the panopticon server over WiFi.
 - **panopticon/** — Web server (Rust/axum). Manages access control via a Svelte 5 frontend with U-Tec smart lock OAuth2 integration.
 
 ---
 
-## Sentinel (ESP32-C3 firmware)
+## Sentinel (ESP32 firmware)
 
 ### How it works
 
 1. The RFIDuino Shield's EM4095 chip continuously reads 125kHz RFID tags and outputs a demodulated digital signal
-2. The ESP32-C3 Manchester-decodes this signal into a 5-byte tag ID (a direct Rust port of the RFIDuino Arduino library)
-3. The tag ID is compared against a hardcoded allowlist
-4. If authorised, an HTTPS POST is sent to an IFTTT webhook with the tag ID as payload
+2. The ESP32 Manchester-decodes this signal into a 5-byte tag ID (a direct Rust port of the RFIDuino Arduino library)
+3. The tag ID is POSTed to the panopticon server's `/api/sentinel/scan` endpoint with a shared secret for authentication
+4. Panopticon decides whether to grant or deny access
 
 ---
 
 ## Hardware
 
-### Why ESP32-C3 (RISC-V) instead of Arduino?
+### Why ESP32 instead of Arduino?
 
 The RFIDuino Shield v1.2 is designed for Arduino, so the choice to move to an ESP32 was deliberate.
 
@@ -37,23 +37,26 @@ The RFIDuino Shield v1.2 is designed for Arduino, so the choice to move to an ES
 - The Uno R4 WiFi is $25 and literally has an ESP32-S3 inside it — you're paying for a Cortex-M4 middleman
 - Cortex-M Rust is more mature *in general*, but that advantage evaporates when WiFi is stuck behind a serial protocol to a coprocessor
 
-**Why ESP32-C3 wins:**
-- **RISC-V** single-core @ 160MHz — Tier 2 in upstream Rust (stable compiler, no custom toolchain)
+**Why ESP32 wins:**
+- **Xtensa** dual-core @ 240MHz — well-supported via the `esp` Rust toolchain fork
 - **WiFi integrated into the MCU** — the entire stack (GPIO, WiFi, TLS, HTTP) runs in one binary, all callable from Rust
-- **400KB SRAM, 4MB flash** — plenty for TLS, HTTP buffers, and application logic
-- **$3-5** for an ESP32-C3 SuperMini dev board
+- **520KB SRAM, 4MB flash** — plenty for TLS, HTTP buffers, and application logic
+- **$3-6** for an ESP32 DevKit v1 board
 - `esp-idf-svc` provides WiFi and HTTPS (via bundled mbedTLS) with ergonomic Rust APIs
-- `esp-hal` 1.0.0-beta (Feb 2025) marks the ecosystem as stable and production-ready
 
 ### Recommended dev boards
 
 | Board | Price | Notes |
 |-------|-------|-------|
-| **ESP32-C3 SuperMini** | ~$3-5 | Best bang for buck. USB-C, 13 GPIOs, ultra-compact (22.5×18mm) |
-| **Seeed XIAO ESP32-C3** | ~$5-7 | More polished, castellated pads, excellent documentation |
-| **ESP32-C6-DevKitC-1** | ~$8-12 | WiFi 6 + Zigbee/Thread/Matter. Overkill, but future-proof |
+| **ESP32 DevKit v1** | ~$3-6 | 30-pin, USB-micro, widely available, all GPIOs broken out |
+| **ESP32-DevKitC-32E** | ~$8-10 | Espressif official, USB-micro, 38-pin, reliable |
+| **ESP32-WROOM-32E** | ~$3-5 | Module only — solder to a breakout if you want compact |
 
-All have USB-C with built-in USB-serial (no external programmer needed).
+All have USB with built-in USB-serial (no external programmer needed).
+
+### ESP32 GPIO constraints
+
+On the original ESP32, **GPIO6–11 are connected to the internal SPI flash** and must not be used for external peripherals. GPIO16–17 may be connected to PSRAM on WROVER modules. The pin assignments below avoid all of these.
 
 ### Why the RFIDuino library port is feasible
 
@@ -85,8 +88,8 @@ This is the most important hardware detail. The RFIDuino Shield is designed for 
 |-----------|---------|
 | EM4095 operating range | **2.7V – 5.5V** |
 | Arduino Uno VCC | 5V |
-| ESP32-C3 VCC | **3.3V** |
-| ESP32-C3 GPIO absolute max | **3.6V** (NOT 5V tolerant) |
+| ESP32 VCC | **3.3V** |
+| ESP32 GPIO absolute max | **3.6V** (NOT 5V tolerant) |
 
 **If you power the EM4095 at 5V, its demod_out signal swings to 5V — this will damage the ESP32.**
 
@@ -109,27 +112,34 @@ If you need maximum range:
 You are NOT stacking the shield — you wire point-to-point from the ESP32 to the shield's Arduino header pads or RobotGeek 3-pin connectors.
 
 ```
-ESP32-C3 SuperMini          RFIDuino Shield v1.2
-──────────────────          ────────────────────
-GPIO2  ──────────────────── demod_out  (D3 pad)
-GPIO3  ──────────────────── rdy_clk    (D2 pad)
-GPIO4  ──────────────────── shd        (D7 pad)
-GPIO5  ──────────────────── mod        (D6 pad)
+ESP32 DevKit               RFIDuino Shield v1.2        Function
+─────────────              ────────────────────        ────────
+GPIO13 ──────────────────── D3 pad (demod_out)          RFID data from EM4095
+GPIO14 ──────────────────── D2 pad (rdy_clk)            EM4095 clock
+GPIO15 ──────────────────── D7 pad (shd)                EM4095 shutdown
+GPIO18 ──────────────────── D6 pad (mod)                EM4095 modulation
+GPIO19 ──────────────────── D5 pad (buzzer)             Piezo buzzer (PWM)
+GPIO21 ──────────────────── D8 pad (led1)               Red LED
+GPIO22 ──────────────────── D4 pad (led2)               Green LED
 3.3V   ──────────────────── VCC
 GND    ──────────────────── GND
 ```
 
-The GPIO numbers are configurable — edit the `PIN_*` constants in `src/main.rs`.
+The GPIO numbers are configurable — edit the pin assignments in `src/main.rs`.
+
+The buzzer is a passive piezo driven with a PWM square wave. The Arduino library uses `tone()` at 1300–4500Hz; on the ESP32 you use the LEDC peripheral to generate the same kind of signal.
 
 ### Which connectors on the shield?
 
 The shield has several connection points:
-- **3-pin RobotGeek connectors** (Signal-VCC-GND) on the digital I/O side — easiest for jumper wires
-- **Arduino header pads** — the through-hole pads where it would normally stack onto an Arduino
+- **Arduino header pads** — the through-hole pads where it would normally stack onto an Arduino. The RFID signals (D2, D3, D6, D7), buzzer (D5), and LEDs (D4, D8) are all here.
+- **3-pin RobotGeek connectors** — rows of 3-pin headers labelled **S-V-G** on the board, where **S** = Signal, **V** = Voltage (VCC), **G** = Ground. These break out individual Arduino pins with power and ground alongside, so you can plug in a servo or sensor with a single 3-pin cable. The shield has two groups:
+  - **DIO-9 through DIO-12** — Digital I/O pins 9–12 (unused by the shield itself)
+  - **AIO-0 through AIO-3** — Analog I/O pins A0–A3 (unused by the shield itself)
 - **4-pin I2C connector** — not needed for this project
 - **XBee socket** — not needed
 
-The 4 signals you need (demod_out, rdy_clk, shd, mod) are on digital pins D2, D3, D6, D7 of the Arduino header footprint.
+The DIO/AIO connectors are free pins for your own peripherals. The 7 pins the shield actually uses (D2, D3, D4, D5, D6, D7, D8) are only accessible via the Arduino header pads — they don't have their own 3-pin breakout connectors.
 
 ---
 
@@ -141,58 +151,53 @@ The 4 signals you need (demod_out, rdy_clk, shd, mod) are on digital pins D2, D3
 # Install Rust (if you don't have it)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Add the RISC-V target for ESP32-C3
-rustup target add riscv32imc-unknown-none-elf
+# Install the Xtensa Rust toolchain for ESP32
+cargo install espup
+espup install
+source ~/export-esp.sh   # sets up PATH and LIBCLANG_PATH
 
 # Install ESP32 Rust tooling
-cargo install cargo-generate  # Project scaffolding (already done)
 cargo install espflash         # Flashing tool (includes monitor)
 cargo install ldproxy          # Linker proxy for ESP-IDF
 ```
 
 ### Configuration
 
-Edit the constants at the top of `src/main.rs`:
+Copy the example env file and fill in your values:
 
-```rust
-const WIFI_SSID: &str = "YOUR_WIFI_SSID";
-const WIFI_PASS: &str = "YOUR_WIFI_PASSWORD";
-const IFTTT_EVENT: &str = "rfid_door";
-const IFTTT_KEY: &str = "YOUR_IFTTT_KEY";
+```bash
+cd sentinel
+cp .env.example .env
 ```
 
-Add your RFID tag IDs to the allowlist:
+Edit `sentinel/.env` with your WiFi credentials, panopticon server URL, and shared secret:
 
-```rust
-const ALLOWED_TAGS: &[TagId] = &[
-    [128, 0, 72, 35, 76],  // Replace with your actual tag IDs
-];
+```
+WIFI_SSID=your_wifi_ssid
+WIFI_PASS=your_wifi_password
+PANOPTICON_URL=https://your-panopticon-server.example.com
+SENTINEL_SECRET=generate_a_random_32char_hex_string
 ```
 
-To discover your tag IDs, flash the firmware with an empty allowlist and scan your tags — the IDs will appear in the serial monitor log.
+These are embedded into the firmware binary at compile time via `build.rs` — the `.env` file is gitignored and never committed.
+
+The `SENTINEL_SECRET` must match the value configured on the panopticon server.
 
 ### Build and flash
 
+**Important:** Connect the USB cable directly to the ESP32 dev board's USB port, not the USB port on any breakout board or shield. The board's USB-serial chip is used for both flashing and serial monitoring.
+
 ```bash
+cd sentinel
+
 # Build (first build downloads ESP-IDF SDK — takes a while)
 cargo build
 
-# Build and flash to connected ESP32-C3, then open serial monitor
+# Build and flash to connected ESP32, then open serial monitor
 cargo run
 ```
 
 The serial monitor (`espflash monitor`) shows log output over USB at runtime.
-
-### IFTTT setup
-
-1. Go to [IFTTT](https://ifttt.com) and create a new applet
-2. **If This**: Choose "Webhooks" → "Receive a web request"
-3. Set the event name to match `IFTTT_EVENT` (default: `rfid_door`)
-4. **Then That**: Choose your action (e.g., unlock a smart lock, send a notification)
-5. Go to [IFTTT Webhooks settings](https://ifttt.com/maker_webhooks) → "Documentation" to find your key
-6. Put that key in `IFTTT_KEY`
-
-The webhook payload sends the tag ID as `value1`.
 
 ---
 
@@ -200,7 +205,7 @@ The webhook payload sends the tag ID as `value1`.
 
 ```
 rfid-door/
-├── sentinel/                   # ESP32-C3 firmware
+├── sentinel/                   # ESP32 firmware
 │   ├── Cargo.toml
 │   ├── build.rs
 │   ├── sdkconfig.defaults

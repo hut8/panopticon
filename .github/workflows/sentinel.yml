@@ -1,0 +1,52 @@
+name: Sentinel
+
+on:
+  push:
+    paths:
+      - "sentinel/**"
+      - ".github/workflows/sentinel.yml"
+  pull_request:
+    paths:
+      - "sentinel/**"
+      - ".github/workflows/sentinel.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+  WIFI_SSID: "ci-placeholder"
+  WIFI_PASS: "ci-placeholder"
+  PANOPTICON_URL: "http://localhost:1337"
+  SENTINEL_SECRET: "ci-placeholder"
+
+jobs:
+  check:
+    name: Build and test sentinel
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sentinel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          ldproxy: true
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sentinel
+
+      - name: Cache ESP-IDF
+        uses: actions/cache@v4
+        with:
+          path: sentinel/.embuild
+          key: esp-idf-${{ hashFiles('sentinel/Cargo.lock', 'sentinel/.cargo/config.toml', 'sentinel/sdkconfig.defaults') }}
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build python3-venv
+
+      - name: Build
+        run: cargo build
+
+      - name: Test
+        run: cargo test --no-run
