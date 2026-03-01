@@ -73,12 +73,11 @@ async fn handle_connection(
     let (sentinel_id, sentinel_name) = match row {
         Some(r) => r,
         None => {
-            let created: (Uuid, String) = sqlx::query_as(
-                "INSERT INTO sentinels (secret) VALUES ($1) RETURNING id, name",
-            )
-            .bind(secret)
-            .fetch_one(&state.db)
-            .await?;
+            let created: (Uuid, String) =
+                sqlx::query_as("INSERT INTO sentinels (secret) VALUES ($1) RETURNING id, name")
+                    .bind(secret)
+                    .fetch_one(&state.db)
+                    .await?;
             created
         }
     };
@@ -155,7 +154,9 @@ async fn handle_connection(
         .execute(&state.db)
         .await?;
 
-    let _ = state.events.send(WsEvent::SentinelDisconnected { id: sentinel_id });
+    let _ = state
+        .events
+        .send(WsEvent::SentinelDisconnected { id: sentinel_id });
 
     Ok(())
 }
