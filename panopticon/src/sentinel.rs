@@ -367,17 +367,19 @@ async fn scan_log(
 
 // ── Sentinel endpoints ──────────────────────────────────────────────────────
 
+type SentinelRow = (
+    Uuid,
+    String,
+    bool,
+    Option<chrono::DateTime<chrono::Utc>>,
+    chrono::DateTime<chrono::Utc>,
+);
+
 async fn list_sentinels(
     _user: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<SentinelResponse>>, ApiError> {
-    let rows: Vec<(
-        Uuid,
-        String,
-        bool,
-        Option<chrono::DateTime<chrono::Utc>>,
-        chrono::DateTime<chrono::Utc>,
-    )> = sqlx::query_as(
+    let rows: Vec<SentinelRow> = sqlx::query_as(
         "SELECT id, name, connected, last_connected_at, created_at FROM sentinels ORDER BY created_at",
     )
     .fetch_all(&state.db)
