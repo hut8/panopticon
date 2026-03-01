@@ -18,12 +18,12 @@ use rfiduino::{format_tag_id, format_tag_id_hex, RFIDuino, TagId};
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
-const WIFI_SSID: &str = env!("WIFI_SSID");
-const WIFI_PASS: &str = env!("WIFI_PASS");
-const PANOPTICON_HOST: &str = env!("PANOPTICON_HOST");
-const PANOPTICON_PORT: &str = env!("PANOPTICON_PORT");
-const SENTINEL_SECRET: &str = env!("SENTINEL_SECRET");
-const SENTINEL_HOSTNAME: &str = env!("SENTINEL_HOSTNAME");
+const WIFI_SSID: &str = env!("WIFI_SSID", "missing WIFI_SSID — copy sentinel/.env.example to sentinel/.env and fill in values");
+const WIFI_PASS: &str = env!("WIFI_PASS", "missing WIFI_PASS — copy sentinel/.env.example to sentinel/.env and fill in values");
+const PANOPTICON_HOST: &str = env!("PANOPTICON_HOST", "missing PANOPTICON_HOST — copy sentinel/.env.example to sentinel/.env and fill in values");
+const PANOPTICON_PORT: &str = env!("PANOPTICON_PORT", "missing PANOPTICON_PORT — copy sentinel/.env.example to sentinel/.env and fill in values");
+const SENTINEL_SECRET: &str = env!("SENTINEL_SECRET", "missing SENTINEL_SECRET — copy sentinel/.env.example to sentinel/.env and fill in values");
+const SENTINEL_HOSTNAME: &str = env!("SENTINEL_HOSTNAME", "missing SENTINEL_HOSTNAME — copy sentinel/.env.example to sentinel/.env and fill in values");
 
 /// Cooldown between successful scans of the same tag (prevents rapid re-triggering).
 const SCAN_COOLDOWN: Duration = Duration::from_secs(5);
