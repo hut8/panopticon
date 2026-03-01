@@ -17,6 +17,7 @@ env:
   PANOPTICON_HOST: "localhost"
   PANOPTICON_PORT: "8008"
   SENTINEL_SECRET: "ci-placeholder"
+  SENTINEL_HOSTNAME: "sentinel-ci"
 
 jobs:
   check:
