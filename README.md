@@ -139,7 +139,7 @@ The shield has several connection points:
 - **4-pin I2C connector** — not needed for this project
 - **XBee socket** — not needed
 
-The DIO/AIO connectors are free pins for your own peripherals. The 6 pins the shield actually uses (D2, D3, D4, D5, D6, D7, D8) are only accessible via the Arduino header pads — they don't have their own 3-pin breakout connectors.
+The DIO/AIO connectors are free pins for your own peripherals. The 7 pins the shield actually uses (D2, D3, D4, D5, D6, D7, D8) are only accessible via the Arduino header pads — they don't have their own 3-pin breakout connectors.
 
 ---
 
