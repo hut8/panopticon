@@ -1,5 +1,5 @@
 use sha2::{Digest, Sha256};
-use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -66,6 +66,22 @@ async fn read_limited_line(
             Err(_) => {
                 let consume_len = chunk.len();
                 reader.consume(consume_len);
+                // Drain the rest of the line so the stream is left on a clean
+                // boundary — otherwise the next read starts mid-line.
+                if !found_newline {
+                    loop {
+                        let rest = reader.fill_buf().await?;
+                        if rest.is_empty() {
+                            break;
+                        }
+                        if let Some(pos) = memchr::memchr(b'\n', rest) {
+                            reader.consume(pos + 1);
+                            break;
+                        }
+                        let n = rest.len();
+                        reader.consume(n);
+                    }
+                }
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "non-UTF-8 data on sentinel connection",
@@ -116,7 +132,8 @@ async fn handle_connection(
     stream: tokio::net::TcpStream,
     addr: std::net::SocketAddr,
 ) -> anyhow::Result<()> {
-    let mut reader = BufReader::new(stream);
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
     let mut line = String::new();
 
     // 1. Expect AUTHZ as the first message (with 10-second timeout)
@@ -231,6 +248,22 @@ async fn handle_connection(
                 match process_scan(&state, tag_id).await {
                     Ok(action) => {
                         info!(%addr, tag_id, action, "Scan processed via TCP");
+                        let response = format!("RESULT: {action}\n");
+                        let write_result = tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            write_half.write_all(response.as_bytes()),
+                        ).await;
+                        match write_result {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                warn!(%addr, "Failed to send RESULT to sentinel: {e}");
+                                break;
+                            }
+                            Err(_) => {
+                                warn!(%addr, "Timed out sending RESULT to sentinel");
+                                break;
+                            }
+                        }
                     }
                     Err(e) => {
                         error!(%addr, tag_id, "Failed to process scan: {e}");
