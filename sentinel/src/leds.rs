@@ -6,6 +6,7 @@
 
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::gpio::{AnyOutputPin, Output, PinDriver};
+use log::warn;
 
 pub struct Leds<'a> {
     red: PinDriver<'a, AnyOutputPin, Output>,
@@ -22,14 +23,22 @@ impl<'a> Leds<'a> {
     }
 
     pub fn flash_green(&mut self, duration_ms: u32) {
-        let _ = self.green.set_high();
+        if let Err(e) = self.green.set_high() {
+            warn!("Failed to set green LED high: {e}");
+        }
         FreeRtos::delay_ms(duration_ms);
-        let _ = self.green.set_low();
+        if let Err(e) = self.green.set_low() {
+            warn!("Failed to set green LED low: {e}");
+        }
     }
 
     pub fn flash_red(&mut self, duration_ms: u32) {
-        let _ = self.red.set_high();
+        if let Err(e) = self.red.set_high() {
+            warn!("Failed to set red LED high: {e}");
+        }
         FreeRtos::delay_ms(duration_ms);
-        let _ = self.red.set_low();
+        if let Err(e) = self.red.set_low() {
+            warn!("Failed to set red LED low: {e}");
+        }
     }
 }

@@ -249,9 +249,20 @@ async fn handle_connection(
                     Ok(action) => {
                         info!(%addr, tag_id, action, "Scan processed via TCP");
                         let response = format!("RESULT: {action}\n");
-                        if let Err(e) = write_half.write_all(response.as_bytes()).await {
-                            warn!(%addr, "Failed to send RESULT to sentinel: {e}");
-                            break;
+                        let write_result = tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            write_half.write_all(response.as_bytes()),
+                        ).await;
+                        match write_result {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                warn!(%addr, "Failed to send RESULT to sentinel: {e}");
+                                break;
+                            }
+                            Err(_) => {
+                                warn!(%addr, "Timed out sending RESULT to sentinel");
+                                break;
+                            }
                         }
                     }
                     Err(e) => {

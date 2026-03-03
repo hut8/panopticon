@@ -273,7 +273,10 @@ fn send_scan(tcp_handle: logger::TcpHandle, tag_id: &str) -> Option<String> {
                 // Read the RESULT response with a 2-second timeout.
                 // Read byte-by-byte to avoid BufReader buffering issues.
                 let prev_timeout = stream.read_timeout().ok().flatten();
-                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                if let Err(e) = stream.set_read_timeout(Some(Duration::from_secs(2))) {
+                    warn!("Failed to set read timeout for RESULT: {e}");
+                    return None;
+                }
 
                 let mut response = Vec::with_capacity(64);
                 let result = loop {
@@ -313,7 +316,7 @@ fn send_scan(tcp_handle: logger::TcpHandle, tag_id: &str) -> Option<String> {
                     }
                     Err(reason) => {
                         warn!("Failed to read RESULT for {tag_id}: {reason}");
-                        if reason == "connection closed" {
+                        if reason == "connection closed" || reason == "response too long" {
                             *guard = None;
                             drop(guard);
                             connect_panopticon_nonblocking(tcp_handle);

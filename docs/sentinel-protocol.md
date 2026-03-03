@@ -60,6 +60,7 @@ Where `<action>` is one of:
 - `enrolled` — the card was added in enrollment mode
 
 Only sent in response to `SCAN` messages. `LOG` and `AUTHZ` messages
-receive no response. If the sentinel does not read the response (e.g. an
-older firmware version), the unread bytes accumulate harmlessly in the
-TCP receive buffer.
+receive no response. Sentinels are expected to read `RESULT` lines from
+the connection, even if they ignore the contents. If a sentinel never
+reads responses (e.g. very old firmware), panopticon will time out the
+write and close the connection.
