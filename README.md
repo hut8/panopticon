@@ -291,8 +291,8 @@ cargo run
 
 # Terminal 2: Run the Vite dev server (hot-reloading frontend)
 cd panopticon/web
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 The Vite dev server (port 5173) proxies `/auth/*` requests to the Rust backend (port 1337).

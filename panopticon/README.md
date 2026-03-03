@@ -122,7 +122,7 @@ client.send_command(lock, CommandSpec {
 cargo run
 
 # Terminal 2: Vite dev server (hot-reloading frontend)
-cd web && npm install && npm run dev
+cd web && bun install && bun run dev
 ```
 
 Vite (port 5173) proxies `/auth/*` to the Rust backend (port 1337).

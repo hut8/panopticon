@@ -66,6 +66,22 @@ async fn read_limited_line(
             Err(_) => {
                 let consume_len = chunk.len();
                 reader.consume(consume_len);
+                // Drain the rest of the line so the stream is left on a clean
+                // boundary — otherwise the next read starts mid-line.
+                if !found_newline {
+                    loop {
+                        let rest = reader.fill_buf().await?;
+                        if rest.is_empty() {
+                            break;
+                        }
+                        if let Some(pos) = memchr::memchr(b'\n', rest) {
+                            reader.consume(pos + 1);
+                            break;
+                        }
+                        let n = rest.len();
+                        reader.consume(n);
+                    }
+                }
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "non-UTF-8 data on sentinel connection",
