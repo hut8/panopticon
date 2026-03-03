@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -6,6 +7,10 @@ use uuid::Uuid;
 use crate::sentinel::{is_valid_tag_id, process_scan};
 use crate::ws::WsEvent;
 use crate::AppState;
+
+fn hash_secret(secret: &str) -> String {
+    format!("{:x}", Sha256::digest(secret.as_bytes()))
+}
 
 /// Maximum allowed line length from a sentinel (8 KiB).
 const MAX_LINE_LENGTH: usize = 8192;
@@ -137,21 +142,24 @@ async fn handle_connection(
         anyhow::bail!("Invalid secret");
     }
 
-    // 2. Look up or create sentinel in DB (keyed by secret)
+    // 2. Look up or create sentinel in DB (keyed by hashed secret)
+    let secret_hash = hash_secret(secret);
+
     let row: Option<(Uuid, String)> =
-        sqlx::query_as("SELECT id, name FROM sentinels WHERE secret = $1")
-            .bind(secret)
+        sqlx::query_as("SELECT id, name FROM sentinels WHERE secret_hash = $1")
+            .bind(&secret_hash)
             .fetch_optional(&state.db)
             .await?;
 
     let (sentinel_id, sentinel_name) = match row {
         Some(r) => r,
         None => {
-            let created: (Uuid, String) =
-                sqlx::query_as("INSERT INTO sentinels (secret) VALUES ($1) RETURNING id, name")
-                    .bind(secret)
-                    .fetch_one(&state.db)
-                    .await?;
+            let created: (Uuid, String) = sqlx::query_as(
+                "INSERT INTO sentinels (secret_hash) VALUES ($1) RETURNING id, name",
+            )
+            .bind(&secret_hash)
+            .fetch_one(&state.db)
+            .await?;
             created
         }
     };

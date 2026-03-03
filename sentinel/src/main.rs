@@ -4,6 +4,7 @@ mod rfiduino;
 
 use std::io::Write;
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -54,7 +55,8 @@ fn main() -> Result<()> {
     {
         use esp_idf_svc::handle::RawHandle;
         use std::ffi::CString;
-        let hostname = CString::new(SENTINEL_HOSTNAME).unwrap();
+        let hostname = CString::new(SENTINEL_HOSTNAME)
+            .expect("SENTINEL_HOSTNAME must not contain NUL bytes");
         let netif = wifi.wifi().sta_netif();
         let err = unsafe {
             esp_idf_svc::sys::esp_netif_set_hostname(
@@ -153,8 +155,11 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> Result<()> {
 
 // ── Panopticon TCP connection ─────────────────────────────────────────────
 
-/// Connect to panopticon and send AUTHZ. Stores the stream in the shared handle
-/// so the logger can also write to it.
+/// Guards against overlapping background connection attempts.
+static CONNECTING: AtomicBool = AtomicBool::new(false);
+
+/// Connect to panopticon (blocking). Resolves the host, opens a TCP socket,
+/// sends the AUTHZ handshake, and stores the stream in the shared handle.
 fn connect_panopticon(tcp_handle: logger::TcpHandle) {
     let addr = format!("{}:{}", PANOPTICON_HOST, PANOPTICON_PORT);
     info!("Connecting to panopticon at {addr}...");
@@ -192,8 +197,13 @@ fn connect_panopticon(tcp_handle: logger::TcpHandle) {
             info!("Connected to panopticon");
 
             // Store in shared handle (logger will start sending LOG messages)
-            if let Ok(mut guard) = tcp_handle.lock() {
-                *guard = Some(stream);
+            match tcp_handle.lock() {
+                Ok(mut guard) => {
+                    *guard = Some(stream);
+                }
+                Err(e) => {
+                    error!("Failed to acquire TCP handle lock: {e}");
+                }
             }
         }
         Err(e) => {
@@ -202,7 +212,19 @@ fn connect_panopticon(tcp_handle: logger::TcpHandle) {
     }
 }
 
-/// Reconnect to panopticon if disconnected, then send AUTHZ.
+/// Spawn a background thread to reconnect without blocking the main loop.
+/// No-op if a connection attempt is already in progress.
+fn connect_panopticon_nonblocking(tcp_handle: logger::TcpHandle) {
+    if CONNECTING.swap(true, Ordering::SeqCst) {
+        return; // already connecting
+    }
+    std::thread::spawn(move || {
+        connect_panopticon(tcp_handle);
+        CONNECTING.store(false, Ordering::SeqCst);
+    });
+}
+
+/// Trigger a non-blocking reconnect if disconnected.
 fn ensure_connected(tcp_handle: logger::TcpHandle) {
     let connected = tcp_handle
         .lock()
@@ -210,55 +232,32 @@ fn ensure_connected(tcp_handle: logger::TcpHandle) {
         .unwrap_or(false);
 
     if !connected {
-        connect_panopticon(tcp_handle);
+        connect_panopticon_nonblocking(tcp_handle);
     }
 }
 
-/// Send a SCAN message over the TCP connection. Reconnects if needed.
+/// Send a SCAN message over the TCP connection. If the write fails or no
+/// stream is available, triggers a background reconnect for the next attempt.
 fn send_scan(tcp_handle: logger::TcpHandle, tag_id: &str) {
-    ensure_connected(tcp_handle);
-
     let msg = format!("SCAN: {}\n", tag_id);
 
-    let mut reconnected = false;
     match tcp_handle.lock() {
         Ok(mut guard) => {
             if let Some(ref mut stream) = *guard {
-                if stream.write_all(msg.as_bytes()).is_ok() {
-                    return;
+                if let Err(e) = stream.write_all(msg.as_bytes()) {
+                    warn!("TCP write failed for SCAN {tag_id}: {e}");
+                    *guard = None;
+                    drop(guard);
+                    connect_panopticon_nonblocking(tcp_handle);
                 }
-                // Write failed — clear and reconnect
-                *guard = None;
-                reconnected = true;
             } else {
                 warn!("Cannot send SCAN: no TCP stream available");
+                drop(guard);
+                connect_panopticon_nonblocking(tcp_handle);
             }
         }
         Err(e) => {
             error!("Cannot send SCAN: TCP lock poisoned: {e}");
-            return;
-        }
-    }
-
-    if reconnected {
-        warn!("TCP write failed, reconnecting...");
-        connect_panopticon(tcp_handle);
-
-        // Retry once after reconnect
-        match tcp_handle.lock() {
-            Ok(mut guard) => {
-                if let Some(ref mut stream) = *guard {
-                    if let Err(e) = stream.write_all(msg.as_bytes()) {
-                        error!("Failed to send SCAN after reconnect: {e}");
-                        *guard = None;
-                    }
-                } else {
-                    error!("SCAN dropped: still no TCP stream after reconnect");
-                }
-            }
-            Err(e) => {
-                error!("SCAN dropped: TCP lock poisoned after reconnect: {e}");
-            }
         }
     }
 }

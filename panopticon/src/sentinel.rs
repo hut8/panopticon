@@ -411,7 +411,7 @@ async fn sentinel_logs(
     Path(id): Path<Uuid>,
     Query(query): Query<LogsQuery>,
 ) -> Result<Json<Vec<SentinelLogEntry>>, ApiError> {
-    let limit = query.limit.unwrap_or(200).min(1000);
+    let limit = query.limit.unwrap_or(200).clamp(1, 1000);
 
     let rows: Vec<(Uuid, Uuid, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
         "SELECT id, sentinel_id, message, created_at FROM sentinel_logs \
