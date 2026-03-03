@@ -33,3 +33,4 @@ openssl = { version = "0.10", features = ["vendored"] }
 maxminddb = "0.24"
 flate2 = "1"
 memchr = "2"
+sha2 = "0.10"
