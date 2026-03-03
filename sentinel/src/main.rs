@@ -1,4 +1,5 @@
 mod buzzer;
+mod leds;
 mod logger;
 mod rfiduino;
 
@@ -91,6 +92,13 @@ fn main() -> Result<()> {
     )?;
     info!("RFIDuino ready — scan a tag");
 
+    // ── LEDs ──────────────────────────────────────────────────────────────
+    let mut leds = leds::Leds::new(
+        pins.gpio21.into(), // Red LED   (shield D8 pad)
+        pins.gpio22.into(), // Green LED (shield D4 pad)
+    )?;
+    info!("LEDs initialized");
+
     // ── Connect to panopticon ─────────────────────────────────────────────
     connect_panopticon(tcp_handle);
 
@@ -118,7 +126,15 @@ fn main() -> Result<()> {
 
             if should_trigger {
                 let hex_id = format_tag_id_hex(&tag);
-                send_scan(tcp_handle, &hex_id);
+                match send_scan(tcp_handle, &hex_id) {
+                    Some(action) if action == "granted" || action == "enrolled" => {
+                        leds.flash_green(500);
+                    }
+                    Some(action) if action == "denied" => {
+                        leds.flash_red(500);
+                    }
+                    _ => {} // No response or unrecognized action — no LED feedback
+                }
                 last_scan = Some((tag, std::time::Instant::now()));
             }
         }
@@ -236,9 +252,11 @@ fn ensure_connected(tcp_handle: logger::TcpHandle) {
     }
 }
 
-/// Send a SCAN message over the TCP connection. If the write fails or no
-/// stream is available, triggers a background reconnect for the next attempt.
-fn send_scan(tcp_handle: logger::TcpHandle, tag_id: &str) {
+/// Send a SCAN message over the TCP connection and wait for the RESULT
+/// response. Returns the action string (e.g. "granted", "denied", "enrolled")
+/// or `None` on timeout/error. If the write fails or no stream is available,
+/// triggers a background reconnect for the next attempt.
+fn send_scan(tcp_handle: logger::TcpHandle, tag_id: &str) -> Option<String> {
     let msg = format!("SCAN: {}\n", tag_id);
 
     match tcp_handle.lock() {
@@ -249,15 +267,70 @@ fn send_scan(tcp_handle: logger::TcpHandle, tag_id: &str) {
                     *guard = None;
                     drop(guard);
                     connect_panopticon_nonblocking(tcp_handle);
+                    return None;
+                }
+
+                // Read the RESULT response with a 2-second timeout.
+                // Read byte-by-byte to avoid BufReader buffering issues.
+                let prev_timeout = stream.read_timeout().ok().flatten();
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+
+                let mut response = Vec::with_capacity(64);
+                let result = loop {
+                    let mut byte = [0u8; 1];
+                    match std::io::Read::read(stream, &mut byte) {
+                        Ok(0) => break Err("connection closed"),
+                        Ok(_) => {
+                            if byte[0] == b'\n' {
+                                break Ok(());
+                            }
+                            response.push(byte[0]);
+                            if response.len() > 128 {
+                                break Err("response too long");
+                            }
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
+                              || e.kind() == std::io::ErrorKind::TimedOut => {
+                            break Err("timeout");
+                        }
+                        Err(_) => break Err("read error"),
+                    }
+                };
+
+                // Restore previous timeout
+                let _ = stream.set_read_timeout(prev_timeout);
+
+                match result {
+                    Ok(()) => {
+                        let line = String::from_utf8_lossy(&response);
+                        if let Some(action) = line.trim().strip_prefix("RESULT: ") {
+                            info!("RESULT for {tag_id}: {action}");
+                            Some(action.to_string())
+                        } else {
+                            warn!("Unexpected response from panopticon: {line}");
+                            None
+                        }
+                    }
+                    Err(reason) => {
+                        warn!("Failed to read RESULT for {tag_id}: {reason}");
+                        if reason == "connection closed" {
+                            *guard = None;
+                            drop(guard);
+                            connect_panopticon_nonblocking(tcp_handle);
+                        }
+                        None
+                    }
                 }
             } else {
                 warn!("Cannot send SCAN: no TCP stream available");
                 drop(guard);
                 connect_panopticon_nonblocking(tcp_handle);
+                None
             }
         }
         Err(e) => {
             error!("Cannot send SCAN: TCP lock poisoned: {e}");
+            None
         }
     }
 }

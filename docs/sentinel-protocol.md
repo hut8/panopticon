@@ -12,8 +12,8 @@ re-authenticates automatically.
 
 ## Message types
 
-All messages flow from sentinel to panopticon. There are no
-panopticon-to-sentinel messages at this time.
+Messages flow in both directions. The sentinel sends `AUTHZ`, `LOG`, and
+`SCAN` messages. Panopticon responds to `SCAN` messages with a `RESULT`.
 
 ### `AUTHZ`
 
@@ -45,3 +45,21 @@ hex bytes.
 Example:
 
     SCAN: 80:00:48:23:4C
+
+### `RESULT` (panopticon → sentinel)
+
+Sent by panopticon in response to a `SCAN` message. Contains the access
+decision so the sentinel can provide LED feedback to the user.
+
+    RESULT: <action>\n
+
+Where `<action>` is one of:
+
+- `granted` — the card is recognized and access is granted
+- `denied` — the card is not recognized
+- `enrolled` — the card was added in enrollment mode
+
+Only sent in response to `SCAN` messages. `LOG` and `AUTHZ` messages
+receive no response. If the sentinel does not read the response (e.g. an
+older firmware version), the unread bytes accumulate harmlessly in the
+TCP receive buffer.

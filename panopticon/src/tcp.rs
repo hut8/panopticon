@@ -1,5 +1,5 @@
 use sha2::{Digest, Sha256};
-use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -132,7 +132,8 @@ async fn handle_connection(
     stream: tokio::net::TcpStream,
     addr: std::net::SocketAddr,
 ) -> anyhow::Result<()> {
-    let mut reader = BufReader::new(stream);
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
     let mut line = String::new();
 
     // 1. Expect AUTHZ as the first message (with 10-second timeout)
@@ -247,6 +248,11 @@ async fn handle_connection(
                 match process_scan(&state, tag_id).await {
                     Ok(action) => {
                         info!(%addr, tag_id, action, "Scan processed via TCP");
+                        let response = format!("RESULT: {action}\n");
+                        if let Err(e) = write_half.write_all(response.as_bytes()).await {
+                            warn!(%addr, "Failed to send RESULT to sentinel: {e}");
+                            break;
+                        }
                     }
                     Err(e) => {
                         error!(%addr, tag_id, "Failed to process scan: {e}");
