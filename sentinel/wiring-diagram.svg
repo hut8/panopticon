@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700">
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       ESP32 ↔ RFIDuino Shield — Wiring Diagram
+       Panopticon Sentinel · sentinel/src/main.rs
+       ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Background -->
+  <rect width="1000" height="700" fill="#0d1117"/>
+
+  <!-- ── Title ───────────────────────────────────────────────────────────── -->
+  <text x="500" y="46" text-anchor="middle"
+        font-family="'Courier New', Consolas, monospace"
+        font-size="21" font-weight="bold" fill="#f0f6fc"
+        >ESP32  ↔  RFIDuino Shield  —  Wiring Diagram</text>
+  <text x="500" y="66" text-anchor="middle"
+        font-family="'Courier New', Consolas, monospace"
+        font-size="11" fill="#8b949e"
+        >Panopticon Sentinel  ·  EM4095 125 kHz RFID reader  ·  direct GPIO interface  ·  3.3 V logic</text>
+  <line x1="50" y1="78" x2="950" y2="78" stroke="#21262d" stroke-width="1"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       ESP32 BOARD   (left, x=40..225, y=88..628)
+       Pins on RIGHT edge at x=225
+       ══════════════════════════════════════════════════════════════════════ -->
+  <!-- PCB body -->
+  <rect x="40" y="88" width="185" height="540"
+        fill="#0c1f0c" stroke="#238636" stroke-width="2" rx="8"/>
+  <!-- orientation notch top-right -->
+  <polygon points="208,88 225,88 225,105" fill="#238636" opacity="0.4"/>
+
+  <!-- Board label -->
+  <text x="132" y="118" text-anchor="middle"
+        font-family="'Courier New', monospace"
+        font-size="14" font-weight="bold" fill="#3fb950">ESP32</text>
+  <text x="132" y="134" text-anchor="middle"
+        font-family="'Courier New', monospace"
+        font-size="10" fill="#2ea043">DevKit v1</text>
+
+  <!-- ESP32-WROOM module (metal shield) -->
+  <rect x="72" y="148" width="110" height="75" rx="4"
+        fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <!-- Antenna strip on module right edge -->
+  <rect x="158" y="152" width="14" height="67" rx="1"
+        fill="#1c2128" stroke="#21262d" stroke-width="1"/>
+  <text x="122" y="185" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="11" fill="#6e7681">ESP32</text>
+  <text x="122" y="201" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="9" fill="#484f58">WROOM-32</text>
+
+  <!-- USB-C / Micro-USB connector at bottom -->
+  <rect x="100" y="582" width="64" height="24" rx="3"
+        fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <rect x="112" y="578" width="40" height="6" rx="2"
+        fill="#21262d" stroke="#30363d" stroke-width="1"/>
+  <text x="132" y="598" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">Micro-USB</text>
+
+  <!-- ── ESP32 right-edge pins ─────────────────────────────────────────── -->
+  <!-- Dot at x=225, label to the left, stub line from x=225 to x=268 -->
+
+  <!-- Row 1 · 3.3V · y=180 -->
+  <line x1="225" y1="180" x2="268" y2="180" stroke="#da3633" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="225" cy="180" r="5" fill="#da3633" stroke="#ff6e6a" stroke-width="1.5"/>
+  <text x="216" y="177" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#ff6e6a">3.3V</text>
+  <text x="216" y="190" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">power out</text>
+
+  <!-- Row 2 · GND · y=230 -->
+  <line x1="225" y1="230" x2="268" y2="230" stroke="#6e7681" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="225" cy="230" r="5" fill="#6e7681" stroke="#8b949e" stroke-width="1.5"/>
+  <text x="216" y="227" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#8b949e">GND</text>
+  <text x="216" y="240" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">common</text>
+
+  <!-- Row 3 · GPIO13 · DEMOD_OUT · y=285 -->
+  <line x1="225" y1="285" x2="268" y2="285" stroke="#f0883e" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="225" cy="285" r="5" fill="#f0883e" stroke="#ffa657" stroke-width="1.5"/>
+  <text x="216" y="282" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#f0883e">GPIO13</text>
+  <text x="216" y="295" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">← input</text>
+
+  <!-- Row 4 · GPIO14 · RDY_CLK · y=340 -->
+  <line x1="225" y1="340" x2="268" y2="340" stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="225" cy="340" r="5" fill="#58a6ff" stroke="#79c0ff" stroke-width="1.5"/>
+  <text x="216" y="337" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#79c0ff">GPIO14</text>
+  <text x="216" y="350" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">← input</text>
+
+  <!-- Row 5 · GPIO15 · SHD · y=395 -->
+  <line x1="225" y1="395" x2="268" y2="395" stroke="#b87fff" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="225" cy="395" r="5" fill="#b87fff" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="216" y="392" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#d2a8ff">GPIO15</text>
+  <text x="216" y="405" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">→ output</text>
+
+  <!-- Row 6 · GPIO18 · MOD · y=450 -->
+  <line x1="225" y1="450" x2="268" y2="450" stroke="#2dbdbd" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="225" cy="450" r="5" fill="#2dbdbd" stroke="#76e3ea" stroke-width="1.5"/>
+  <text x="216" y="447" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#76e3ea">GPIO18</text>
+  <text x="216" y="460" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">→ output</text>
+
+  <!-- Row 7 · GPIO19 · Buzzer · y=505 -->
+  <line x1="225" y1="505" x2="268" y2="505" stroke="#d1a317" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="225" cy="505" r="5" fill="#d1a317" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="216" y="502" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#e3b341">GPIO19</text>
+  <text x="216" y="515" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">→ output</text>
+
+  <!-- Row 8 · GPIO21 · Red LED · y=545 -->
+  <line x1="225" y1="545" x2="268" y2="545" stroke="#f85149" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="225" cy="545" r="5" fill="#f85149" stroke="#ff7b72" stroke-width="1.5"/>
+  <text x="216" y="542" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#ff7b72">GPIO21</text>
+  <text x="216" y="555" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">→ output</text>
+
+  <!-- Row 9 · GPIO22 · Green LED · y=585 -->
+  <line x1="225" y1="585" x2="268" y2="585" stroke="#3fb950" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="225" cy="585" r="5" fill="#3fb950" stroke="#7ee787" stroke-width="1.5"/>
+  <text x="216" y="582" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#7ee787">GPIO22</text>
+  <text x="216" y="595" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">→ output</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       RFIDuino BOARD   (right, x=775..960, y=88..628)
+       Pins on LEFT edge at x=775
+       ══════════════════════════════════════════════════════════════════════ -->
+  <!-- PCB body -->
+  <rect x="775" y="88" width="185" height="540"
+        fill="#0a1929" stroke="#1f6feb" stroke-width="2" rx="8"/>
+  <!-- orientation notch top-left -->
+  <polygon points="775,88 792,88 775,105" fill="#1f6feb" opacity="0.4"/>
+
+  <!-- Board label -->
+  <text x="867" y="118" text-anchor="middle"
+        font-family="'Courier New', monospace"
+        font-size="14" font-weight="bold" fill="#58a6ff">RFIDuino</text>
+  <text x="867" y="134" text-anchor="middle"
+        font-family="'Courier New', monospace"
+        font-size="10" fill="#388bfd">Shield v1.2</text>
+
+  <!-- EM4095 chip package -->
+  <rect x="800" y="148" width="134" height="75" rx="4"
+        fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <!-- Chip pin 1 dot -->
+  <circle cx="808" cy="156" r="3" fill="#30363d"/>
+  <text x="867" y="184" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="11" fill="#6e7681">EM4095</text>
+  <text x="867" y="199" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="9" fill="#484f58">RF analog front-end</text>
+  <text x="867" y="213" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="8" fill="#30363d">125 kHz</text>
+
+  <!-- RFID antenna coil (concentric ellipses) -->
+  <g transform="translate(867,562)">
+    <ellipse rx="55" ry="34" fill="none" stroke="#1f6feb" stroke-width="1.5" opacity="0.9"/>
+    <ellipse rx="43" ry="26" fill="none" stroke="#1f6feb" stroke-width="1.5" opacity="0.7"/>
+    <ellipse rx="31" ry="18" fill="none" stroke="#1f6feb" stroke-width="1.5" opacity="0.5"/>
+    <ellipse rx="19" ry="11" fill="none" stroke="#1f6feb" stroke-width="1.5" opacity="0.35"/>
+    <ellipse rx="8"  ry="5"  fill="none" stroke="#1f6feb" stroke-width="1"   opacity="0.25"/>
+    <text x="0" y="52" text-anchor="middle"
+          font-family="'Courier New', monospace" font-size="9" fill="#388bfd">125 kHz antenna coil</text>
+  </g>
+
+  <!-- ── RFIDuino left-edge pins ────────────────────────────────────────── -->
+  <!-- Stub line from x=732 to x=775, dot at x=775, label to the right -->
+
+  <!-- Row 1 · VCC · y=180 -->
+  <line x1="732" y1="180" x2="775" y2="180" stroke="#da3633" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="775" cy="180" r="5" fill="#da3633" stroke="#ff6e6a" stroke-width="1.5"/>
+  <text x="784" y="177" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#ff6e6a">VCC</text>
+  <text x="784" y="190" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">3.3 V power in</text>
+
+  <!-- Row 2 · GND · y=230 -->
+  <line x1="732" y1="230" x2="775" y2="230" stroke="#6e7681" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="775" cy="230" r="5" fill="#6e7681" stroke="#8b949e" stroke-width="1.5"/>
+  <text x="784" y="227" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#8b949e">GND</text>
+  <text x="784" y="240" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">common ground</text>
+
+  <!-- Row 3 · D3 / DEMOD_OUT · y=285 -->
+  <line x1="732" y1="285" x2="775" y2="285" stroke="#f0883e" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="775" cy="285" r="5" fill="#f0883e" stroke="#ffa657" stroke-width="1.5"/>
+  <text x="784" y="282" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#f0883e">D3</text>
+  <text x="784" y="295" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">DEMOD_OUT</text>
+
+  <!-- Row 4 · D2 / RDY_CLK · y=340 -->
+  <line x1="732" y1="340" x2="775" y2="340" stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="775" cy="340" r="5" fill="#58a6ff" stroke="#79c0ff" stroke-width="1.5"/>
+  <text x="784" y="337" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#79c0ff">D2</text>
+  <text x="784" y="350" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">RDY_CLK</text>
+
+  <!-- Row 5 · D7 / SHD · y=395 -->
+  <line x1="732" y1="395" x2="775" y2="395" stroke="#b87fff" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="775" cy="395" r="5" fill="#b87fff" stroke="#d2a8ff" stroke-width="1.5"/>
+  <text x="784" y="392" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#d2a8ff">D7</text>
+  <text x="784" y="405" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">SHD</text>
+
+  <!-- Row 6 · D6 / MOD · y=450 -->
+  <line x1="732" y1="450" x2="775" y2="450" stroke="#2dbdbd" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="775" cy="450" r="5" fill="#2dbdbd" stroke="#76e3ea" stroke-width="1.5"/>
+  <text x="784" y="447" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#76e3ea">D6</text>
+  <text x="784" y="460" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">MOD</text>
+
+  <!-- Row 7 · D5 / Buzzer · y=505 -->
+  <line x1="732" y1="505" x2="775" y2="505" stroke="#d1a317" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="775" cy="505" r="5" fill="#d1a317" stroke="#e3b341" stroke-width="1.5"/>
+  <text x="784" y="502" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#e3b341">D5</text>
+  <text x="784" y="515" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">Buzzer</text>
+
+  <!-- Row 8 · D8 / Red LED · y=545 -->
+  <line x1="732" y1="545" x2="775" y2="545" stroke="#f85149" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="775" cy="545" r="5" fill="#f85149" stroke="#ff7b72" stroke-width="1.5"/>
+  <text x="784" y="542" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#ff7b72">D8</text>
+  <text x="784" y="555" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">Red LED</text>
+
+  <!-- Row 9 · D4 / Green LED · y=585 -->
+  <line x1="732" y1="585" x2="775" y2="585" stroke="#3fb950" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="775" cy="585" r="5" fill="#3fb950" stroke="#7ee787" stroke-width="1.5"/>
+  <text x="784" y="582" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#7ee787">D4</text>
+  <text x="784" y="595" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">Green LED</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       CONNECTING WIRES    x=268 → x=732  (464 px gap)
+       Labels centered at x=500, with opaque backing rect
+       ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- ── Wire 1 · 3.3V / VCC (red) · y=180 ── -->
+  <line x1="268" y1="180" x2="732" y2="180"
+        stroke="#da3633" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- arrowhead pointing right (→) at RFIDuino end -->
+  <polygon points="720,174 732,180 720,186" fill="#da3633"/>
+  <rect x="390" y="170" width="220" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
+  <text x="500" y="182" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#ff6e6a"
+        >3.3V  →  VCC   (power)</text>
+
+  <!-- ── Wire 2 · GND (gray) · y=230 ── -->
+  <line x1="268" y1="230" x2="732" y2="230"
+        stroke="#6e7681" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="390" y="220" width="220" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
+  <text x="500" y="232" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#8b949e"
+        >GND  ——  GND   (common ground)</text>
+
+  <!-- ── Wire 3 · DEMOD_OUT (orange) · y=285 · RTL ── -->
+  <line x1="268" y1="285" x2="732" y2="285"
+        stroke="#f0883e" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- arrowhead pointing left (←) at ESP32 end -->
+  <polygon points="280,279 268,285 280,291" fill="#f0883e"/>
+  <rect x="355" y="275" width="290" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
+  <text x="500" y="287" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#f0883e"
+        >DEMOD_OUT  ←   (RF demodulated data)</text>
+
+  <!-- ── Wire 4 · RDY_CLK (blue) · y=340 · RTL ── -->
+  <line x1="268" y1="340" x2="732" y2="340"
+        stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round"/>
+  <polygon points="280,334 268,340 280,346" fill="#58a6ff"/>
+  <rect x="355" y="330" width="290" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
+  <text x="500" y="342" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#79c0ff"
+        >RDY_CLK  ←   (ready / clock signal)</text>
+
+  <!-- ── Wire 5 · SHD (purple) · y=395 · LTR ── -->
+  <line x1="268" y1="395" x2="732" y2="395"
+        stroke="#b87fff" stroke-width="2.5" stroke-linecap="round"/>
+  <polygon points="720,389 732,395 720,401" fill="#b87fff"/>
+  <rect x="355" y="385" width="290" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
+  <text x="500" y="397" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#d2a8ff"
+        >SHD  →   (shutdown ctrl, HIGH=off)</text>
+
+  <!-- ── Wire 6 · MOD (teal) · y=450 · LTR ── -->
+  <line x1="268" y1="450" x2="732" y2="450"
+        stroke="#2dbdbd" stroke-width="2.5" stroke-linecap="round"/>
+  <polygon points="720,444 732,450 720,456" fill="#2dbdbd"/>
+  <rect x="355" y="440" width="290" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
+  <text x="500" y="452" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#76e3ea"
+        >MOD  →   (modulation control)</text>
+
+  <!-- ── Wire 7 · Buzzer (yellow) · y=505 · LTR ── -->
+  <line x1="268" y1="505" x2="732" y2="505"
+        stroke="#d1a317" stroke-width="2.5" stroke-linecap="round"/>
+  <polygon points="720,499 732,505 720,511" fill="#d1a317"/>
+  <rect x="355" y="495" width="290" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
+  <text x="500" y="507" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#e3b341"
+        >Buzzer  →   (LEDC PWM audio)</text>
+
+  <!-- ── Wire 8 · Red LED (coral) · y=545 · LTR ── -->
+  <line x1="268" y1="545" x2="732" y2="545"
+        stroke="#f85149" stroke-width="2.5" stroke-linecap="round"/>
+  <polygon points="720,539 732,545 720,551" fill="#f85149"/>
+  <rect x="355" y="535" width="290" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
+  <text x="500" y="547" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#ff7b72"
+        >Red LED  →   (access denied)</text>
+
+  <!-- ── Wire 9 · Green LED (green) · y=585 · LTR ── -->
+  <line x1="268" y1="585" x2="732" y2="585"
+        stroke="#3fb950" stroke-width="2.5" stroke-linecap="round"/>
+  <polygon points="720,579 732,585 720,591" fill="#3fb950"/>
+  <rect x="355" y="575" width="290" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
+  <text x="500" y="587" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#7ee787"
+        >Green LED  →   (access granted)</text>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       FOOTER
+       ══════════════════════════════════════════════════════════════════════ -->
+  <line x1="50" y1="636" x2="950" y2="636" stroke="#21262d" stroke-width="1"/>
+
+  <!-- Legend: direction key -->
+  <text x="185" y="656" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#6e7681"
+        >← = RFIDuino → ESP32</text>
+  <text x="500" y="656" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#6e7681"
+        >→ = ESP32 → RFIDuino</text>
+  <text x="815" y="656" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" fill="#6e7681"
+        >—— = bidirectional / power</text>
+
+  <!-- Notes row -->
+  <text x="500" y="675" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="9" fill="#484f58"
+        >SHD + MOD both LOW for continuous read  ·  SHD HIGH = low-power shutdown  ·  source: sentinel/src/main.rs</text>
+
+  <!-- Bottom border -->
+  <line x1="50" y1="687" x2="950" y2="687" stroke="#161b22" stroke-width="1"/>
+
+</svg>
