@@ -8,6 +8,17 @@ use tracing::{debug, info, warn};
 /// Cached GPS position (latitude, longitude).
 type GpsPosition = Arc<RwLock<Option<(f64, f64)>>>;
 
+/// Result of a geo-proximity check for a single IP.
+pub struct GeoCheckResult {
+    pub ip_lat: f64,
+    pub ip_lon: f64,
+    pub city: Option<String>,
+    pub country: Option<String>,
+    pub distance_miles: f64,
+    pub radius_miles: f64,
+    pub allowed: bool,
+}
+
 /// Geo-based access control: allows IPs that geolocate within a configurable
 /// radius of the device's GPS position.
 #[derive(Clone)]
@@ -98,37 +109,61 @@ impl GeoAccess {
     }
 
     /// Check whether the given IP geolocates within the configured radius of
-    /// the device's current GPS position. Returns `false` if any data is
+    /// the device's current GPS position. Returns `None` if any data is
     /// unavailable (no DB, no fix, IP not found).
-    pub async fn is_within_radius(&self, ip: IpAddr) -> bool {
+    pub async fn check_geo(&self, ip: IpAddr) -> Option<GeoCheckResult> {
         let reader = match &self.reader {
             Some(r) => r,
-            None => return false,
+            None => return None,
         };
 
         let gps = match *self.gps_position.read().await {
             Some(pos) => pos,
-            None => return false,
+            None => return None,
         };
 
         // Look up the IP in the GeoIP database.
         let city: maxminddb::geoip2::City = match reader.lookup(ip) {
             Ok(c) => c,
-            Err(_) => return false,
+            Err(_) => return None,
         };
+
+        let city_name = city
+            .city
+            .as_ref()
+            .and_then(|c| c.names.as_ref())
+            .and_then(|n| n.get("en"))
+            .map(|s| s.to_string());
+
+        let country_name = city
+            .country
+            .as_ref()
+            .and_then(|c| c.names.as_ref())
+            .and_then(|n| n.get("en"))
+            .map(|s| s.to_string());
 
         let location = match city.location {
             Some(ref loc) => loc,
-            None => return false,
+            None => return None,
         };
 
         let (ip_lat, ip_lon) = match (location.latitude, location.longitude) {
             (Some(lat), Some(lon)) => (lat, lon),
-            _ => return false,
+            _ => return None,
         };
 
-        let distance = haversine_miles(gps.0, gps.1, ip_lat, ip_lon);
-        distance <= self.radius_miles
+        let distance_miles = haversine_miles(gps.0, gps.1, ip_lat, ip_lon);
+        let allowed = distance_miles <= self.radius_miles;
+
+        Some(GeoCheckResult {
+            ip_lat,
+            ip_lon,
+            city: city_name,
+            country: country_name,
+            distance_miles,
+            radius_miles: self.radius_miles,
+            allowed,
+        })
     }
 }
 
