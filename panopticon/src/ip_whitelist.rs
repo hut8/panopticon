@@ -70,13 +70,35 @@ pub async fn check(
         }
 
         // Fallback: geo-proximity check.
-        if geo.is_within_radius(addr).await {
-            debug!(client_ip = %client_ip, "Allowed by geo proximity");
-            return next.run(req).await;
-        }
-    }
+        if let Some(result) = geo.check_geo(addr).await {
+            if result.allowed {
+                debug!(client_ip = %client_ip, "Allowed by geo proximity");
+                return next.run(req).await;
+            }
 
-    warn!(client_ip = %client_ip, "Blocked by IP whitelist and geo check");
+            let location = match (&result.city, &result.country) {
+                (Some(city), Some(country)) => format!("{city}, {country}"),
+                (None, Some(country)) => country.clone(),
+                (Some(city), None) => city.clone(),
+                (None, None) => format!("({:.4}, {:.4})", result.ip_lat, result.ip_lon),
+            };
+
+            warn!(
+                client_ip = %client_ip,
+                location = %location,
+                distance_miles = format!("{:.1}", result.distance_miles),
+                radius_miles = format!("{:.1}", result.radius_miles),
+                "Blocked by geo check: {:.1} miles away from {} (radius {:.1} mi)",
+                result.distance_miles,
+                location,
+                result.radius_miles,
+            );
+        } else {
+            warn!(client_ip = %client_ip, "Blocked: not whitelisted and geo lookup unavailable");
+        }
+    } else {
+        warn!(client_ip = %client_ip, "Blocked: could not parse client IP");
+    }
 
     (
         StatusCode::FORBIDDEN,
