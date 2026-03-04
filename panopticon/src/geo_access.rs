@@ -265,6 +265,10 @@ async fn gpsd_session(host: &str, port: u16, position: &GpsPosition) -> anyhow::
 
     let reader = BufReader::new(stream);
     let mut lines = reader.lines();
+    let mut last_logged: Option<(f64, f64)> = None;
+
+    // ~100 feet in miles.
+    const LOG_THRESHOLD_MILES: f64 = 0.019;
 
     while let Some(line) = lines.next_line().await? {
         // We only care about TPV (Time-Position-Velocity) reports.
@@ -282,9 +286,20 @@ async fn gpsd_session(host: &str, port: u16, position: &GpsPosition) -> anyhow::
         let lon = v.get("lon").and_then(|v| v.as_f64());
 
         if let (Some(lat), Some(lon)) = (lat, lon) {
+            let should_log = match last_logged {
+                None => true,
+                Some((prev_lat, prev_lon)) => {
+                    haversine_miles(prev_lat, prev_lon, lat, lon) >= LOG_THRESHOLD_MILES
+                }
+            };
+
             let mut pos = position.write().await;
             *pos = Some((lat, lon));
-            debug!(lat, lon, "GPS position updated");
+
+            if should_log {
+                last_logged = Some((lat, lon));
+                debug!(lat, lon, "GPS position updated");
+            }
         }
     }
 
