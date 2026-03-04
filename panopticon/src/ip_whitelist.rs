@@ -86,8 +86,8 @@ pub async fn check(
             warn!(
                 client_ip = %client_ip,
                 location = %location,
-                distance_miles = format!("{:.1}", result.distance_miles),
-                radius_miles = format!("{:.1}", result.radius_miles),
+                distance_miles = result.distance_miles,
+                radius_miles = result.radius_miles,
                 "Blocked by geo check: {:.1} miles away from {} (radius {:.1} mi)",
                 result.distance_miles,
                 location,
