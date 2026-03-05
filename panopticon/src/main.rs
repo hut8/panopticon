@@ -6,6 +6,7 @@ mod email_auth;
 mod geo_access;
 mod ip_whitelist;
 mod middleware;
+mod mqtt;
 mod oauth;
 mod push;
 mod sentinel;
@@ -87,6 +88,8 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(push::spawn_push_notifier(push_rx, db.clone(), pc.clone()));
     }
 
+    let mqtt_config = mqtt::MqttConfig::from_env();
+
     let state = AppState {
         db,
         auth_store,
@@ -95,6 +98,12 @@ async fn main() -> anyhow::Result<()> {
         sentinel_secret,
         events: events_tx,
     };
+
+    // Spawn MQTT bridge if configured
+    if let Some(ref mc) = mqtt_config {
+        let mqtt_rx = state.events.subscribe();
+        tokio::spawn(mqtt::spawn_mqtt_bridge(mqtt_rx, state.clone(), mc.clone()));
+    }
 
     // Spawn sentinel TCP listener on port 8008
     tokio::spawn(tcp::spawn_tcp_listener(state.clone()));
