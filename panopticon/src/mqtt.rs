@@ -404,14 +404,7 @@ async fn handle_lock_command(state: &AppState, device_id: &str, payload: &str) {
 
     match result {
         Ok(results) => {
-            if let Some(ds) = results.iter().find(|s| s.id == device_id) {
-                if let Some(ls) = ds.lock_state() {
-                    let _ = state.events.send(WsEvent::LockState {
-                        device_id: device_id.to_string(),
-                        lock_state: ls,
-                    });
-                }
-            }
+            crate::api::handle_lock_response(state, device_id, device, &results);
             info!(device_id, command, "MQTT: lock command executed");
         }
         Err(e) => error!(device_id, command, "MQTT: lock command failed: {e:#}"),
@@ -490,8 +483,10 @@ pub async fn spawn_mqtt_bridge(
                 match event {
                     Ok(Event::Incoming(Incoming::ConnAck(_))) => {
                         info!("MQTT: connected to broker");
-                        // Publish online
-                        publish(&client, &bridge_state_topic(), "online").await;
+                        // Publish online (retained, to match LWT)
+                        let _ = client
+                            .publish(bridge_state_topic(), QoS::AtLeastOnce, true, "online")
+                            .await;
 
                         // Subscribe to command topics
                         if let Err(e) = client

@@ -184,7 +184,7 @@ const MAX_DEFERRED_WAIT_SECS: u64 = 60;
 /// response (st.deferredResponse), spawn a background task that waits the
 /// indicated number of seconds, then queries the device and broadcasts the
 /// resulting lock state.
-fn handle_lock_response(
+pub fn handle_lock_response(
     state: &AppState,
     device_id: &str,
     device: &Device,
