@@ -8,6 +8,33 @@ use tracing::{debug, info, warn};
 /// Cached GPS position (latitude, longitude).
 type GpsPosition = Arc<RwLock<Option<(f64, f64)>>>;
 
+/// Why a geo check could not be performed.
+#[derive(Debug)]
+pub enum GeoCheckUnavailable {
+    /// GeoIP database was not loaded at startup.
+    NoDatabase,
+    /// No GPS fix from gpsd.
+    NoGpsFix,
+    /// IP address not found in the GeoIP database.
+    IpNotFound,
+    /// GeoIP database error (corrupt DB, deserialization failure, etc.).
+    DatabaseError(String),
+    /// GeoIP record exists but has no location coordinates.
+    NoLocationData,
+}
+
+impl std::fmt::Display for GeoCheckUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoDatabase => write!(f, "GeoIP database not loaded"),
+            Self::NoGpsFix => write!(f, "no GPS fix from gpsd"),
+            Self::IpNotFound => write!(f, "IP not found in GeoIP database"),
+            Self::DatabaseError(e) => write!(f, "GeoIP database error: {e}"),
+            Self::NoLocationData => write!(f, "GeoIP record has no location coordinates"),
+        }
+    }
+}
+
 /// Result of a geo-proximity check for a single IP.
 pub struct GeoCheckResult {
     pub ip_lat: f64,
@@ -109,23 +136,25 @@ impl GeoAccess {
     }
 
     /// Check whether the given IP geolocates within the configured radius of
-    /// the device's current GPS position. Returns `None` if any data is
-    /// unavailable (no DB, no fix, IP not found).
-    pub async fn check_geo(&self, ip: IpAddr) -> Option<GeoCheckResult> {
+    /// the device's current GPS position.
+    pub async fn check_geo(&self, ip: IpAddr) -> Result<GeoCheckResult, GeoCheckUnavailable> {
         let reader = match &self.reader {
             Some(r) => r,
-            None => return None,
+            None => return Err(GeoCheckUnavailable::NoDatabase),
         };
 
         let gps = match *self.gps_position.read().await {
             Some(pos) => pos,
-            None => return None,
+            None => return Err(GeoCheckUnavailable::NoGpsFix),
         };
 
         // Look up the IP in the GeoIP database.
         let city: maxminddb::geoip2::City = match reader.lookup(ip) {
             Ok(c) => c,
-            Err(_) => return None,
+            Err(maxminddb::MaxMindDBError::AddressNotFoundError(_)) => {
+                return Err(GeoCheckUnavailable::IpNotFound)
+            }
+            Err(e) => return Err(GeoCheckUnavailable::DatabaseError(e.to_string())),
         };
 
         let city_name = city
@@ -144,18 +173,18 @@ impl GeoAccess {
 
         let location = match city.location {
             Some(ref loc) => loc,
-            None => return None,
+            None => return Err(GeoCheckUnavailable::NoLocationData),
         };
 
         let (ip_lat, ip_lon) = match (location.latitude, location.longitude) {
             (Some(lat), Some(lon)) => (lat, lon),
-            _ => return None,
+            _ => return Err(GeoCheckUnavailable::NoLocationData),
         };
 
         let distance_miles = haversine_miles(gps.0, gps.1, ip_lat, ip_lon);
         let allowed = distance_miles <= self.radius_miles;
 
-        Some(GeoCheckResult {
+        Ok(GeoCheckResult {
             ip_lat,
             ip_lon,
             city: city_name,
@@ -242,6 +271,10 @@ async fn gpsd_session(host: &str, port: u16, position: &GpsPosition) -> anyhow::
 
     let reader = BufReader::new(stream);
     let mut lines = reader.lines();
+    let mut last_logged: Option<(f64, f64)> = None;
+
+    // ~100 feet in miles.
+    const LOG_THRESHOLD_MILES: f64 = 0.019;
 
     while let Some(line) = lines.next_line().await? {
         // We only care about TPV (Time-Position-Velocity) reports.
@@ -259,9 +292,20 @@ async fn gpsd_session(host: &str, port: u16, position: &GpsPosition) -> anyhow::
         let lon = v.get("lon").and_then(|v| v.as_f64());
 
         if let (Some(lat), Some(lon)) = (lat, lon) {
+            let should_log = match last_logged {
+                None => true,
+                Some((prev_lat, prev_lon)) => {
+                    haversine_miles(prev_lat, prev_lon, lat, lon) >= LOG_THRESHOLD_MILES
+                }
+            };
+
             let mut pos = position.write().await;
             *pos = Some((lat, lon));
-            debug!(lat, lon, "GPS position updated");
+
+            if should_log {
+                last_logged = Some((lat, lon));
+                debug!(lat, lon, "GPS position updated");
+            }
         }
     }
 

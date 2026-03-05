@@ -8,7 +8,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use ipnet::IpNet;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::auth_store::resolve_auth_path;
 use crate::geo_access::GeoAccess;
@@ -70,31 +70,37 @@ pub async fn check(
         }
 
         // Fallback: geo-proximity check.
-        if let Some(result) = geo.check_geo(addr).await {
-            if result.allowed {
+        match geo.check_geo(addr).await {
+            Ok(result) if result.allowed => {
                 debug!(client_ip = %client_ip, "Allowed by geo proximity");
                 return next.run(req).await;
             }
+            Ok(result) => {
+                let location = match (&result.city, &result.country) {
+                    (Some(city), Some(country)) => format!("{city}, {country}"),
+                    (None, Some(country)) => country.clone(),
+                    (Some(city), None) => city.clone(),
+                    (None, None) => format!("({:.4}, {:.4})", result.ip_lat, result.ip_lon),
+                };
 
-            let location = match (&result.city, &result.country) {
-                (Some(city), Some(country)) => format!("{city}, {country}"),
-                (None, Some(country)) => country.clone(),
-                (Some(city), None) => city.clone(),
-                (None, None) => format!("({:.4}, {:.4})", result.ip_lat, result.ip_lon),
-            };
-
-            warn!(
-                client_ip = %client_ip,
-                location = %location,
-                distance_miles = result.distance_miles,
-                radius_miles = result.radius_miles,
-                "Blocked by geo check: {:.1} miles away from {} (radius {:.1} mi)",
-                result.distance_miles,
-                location,
-                result.radius_miles,
-            );
-        } else {
-            warn!(client_ip = %client_ip, "Blocked: not whitelisted and geo lookup unavailable");
+                warn!(
+                    client_ip = %client_ip,
+                    location = %location,
+                    distance_miles = result.distance_miles,
+                    radius_miles = result.radius_miles,
+                    "Blocked by geo check: {:.1} miles away from {} (radius {:.1} mi)",
+                    result.distance_miles,
+                    location,
+                    result.radius_miles,
+                );
+            }
+            Err(reason) => {
+                error!(
+                    client_ip = %client_ip,
+                    reason = %reason,
+                    "Blocked: not whitelisted and geo check failed — {reason}",
+                );
+            }
         }
     } else {
         warn!(client_ip = %client_ip, "Blocked: could not parse client IP");
