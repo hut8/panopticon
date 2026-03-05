@@ -17,6 +17,8 @@ pub enum GeoCheckUnavailable {
     NoGpsFix,
     /// IP address not found in the GeoIP database.
     IpNotFound,
+    /// GeoIP database error (corrupt DB, deserialization failure, etc.).
+    DatabaseError(String),
     /// GeoIP record exists but has no location coordinates.
     NoLocationData,
 }
@@ -27,6 +29,7 @@ impl std::fmt::Display for GeoCheckUnavailable {
             Self::NoDatabase => write!(f, "GeoIP database not loaded"),
             Self::NoGpsFix => write!(f, "no GPS fix from gpsd"),
             Self::IpNotFound => write!(f, "IP not found in GeoIP database"),
+            Self::DatabaseError(e) => write!(f, "GeoIP database error: {e}"),
             Self::NoLocationData => write!(f, "GeoIP record has no location coordinates"),
         }
     }
@@ -148,7 +151,10 @@ impl GeoAccess {
         // Look up the IP in the GeoIP database.
         let city: maxminddb::geoip2::City = match reader.lookup(ip) {
             Ok(c) => c,
-            Err(_) => return Err(GeoCheckUnavailable::IpNotFound),
+            Err(maxminddb::MaxMindDBError::AddressNotFoundError(_)) => {
+                return Err(GeoCheckUnavailable::IpNotFound)
+            }
+            Err(e) => return Err(GeoCheckUnavailable::DatabaseError(e.to_string())),
         };
 
         let city_name = city
