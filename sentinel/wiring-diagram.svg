@@ -4,6 +4,7 @@
   <!-- ══════════════════════════════════════════════════════════════════════
        ESP32 ↔ RFIDuino Shield — Wiring Diagram
        Panopticon Sentinel · sentinel/src/main.rs
+       Shield powered at 5 V; DEMOD_OUT + RDY_CLK level-shifted 5V→3.3V
        ══════════════════════════════════════════════════════════════════════ -->
 
   <!-- Background -->
@@ -17,20 +18,17 @@
   <text x="500" y="66" text-anchor="middle"
         font-family="'Courier New', Consolas, monospace"
         font-size="11" fill="#8b949e"
-        >Panopticon Sentinel  ·  EM4095 125 kHz RFID reader  ·  direct GPIO interface  ·  3.3 V logic</text>
+        >Panopticon Sentinel  ·  EM4095 125 kHz RFID reader  ·  shield at 5 V  ·  BSS138 level shifter on inputs</text>
   <line x1="50" y1="78" x2="950" y2="78" stroke="#21262d" stroke-width="1"/>
 
   <!-- ══════════════════════════════════════════════════════════════════════
        ESP32 BOARD   (left, x=40..225, y=88..628)
        Pins on RIGHT edge at x=225
        ══════════════════════════════════════════════════════════════════════ -->
-  <!-- PCB body -->
   <rect x="40" y="88" width="185" height="540"
         fill="#0c1f0c" stroke="#238636" stroke-width="2" rx="8"/>
-  <!-- orientation notch top-right -->
   <polygon points="208,88 225,88 225,105" fill="#238636" opacity="0.4"/>
 
-  <!-- Board label -->
   <text x="132" y="118" text-anchor="middle"
         font-family="'Courier New', monospace"
         font-size="14" font-weight="bold" fill="#3fb950">ESP32</text>
@@ -38,10 +36,9 @@
         font-family="'Courier New', monospace"
         font-size="10" fill="#2ea043">DevKit v1</text>
 
-  <!-- ESP32-WROOM module (metal shield) -->
+  <!-- ESP32-WROOM module -->
   <rect x="72" y="148" width="110" height="75" rx="4"
         fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <!-- Antenna strip on module right edge -->
   <rect x="158" y="152" width="14" height="67" rx="1"
         fill="#1c2128" stroke="#21262d" stroke-width="1"/>
   <text x="122" y="185" text-anchor="middle"
@@ -49,7 +46,7 @@
   <text x="122" y="201" text-anchor="middle"
         font-family="'Courier New', monospace" font-size="9" fill="#484f58">WROOM-32</text>
 
-  <!-- USB-C / Micro-USB connector at bottom -->
+  <!-- USB connector -->
   <rect x="100" y="582" width="64" height="24" rx="3"
         fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
   <rect x="112" y="578" width="40" height="6" rx="2"
@@ -58,15 +55,14 @@
         font-family="'Courier New', monospace" font-size="8" fill="#484f58">Micro-USB</text>
 
   <!-- ── ESP32 right-edge pins ─────────────────────────────────────────── -->
-  <!-- Dot at x=225, label to the left, stub line from x=225 to x=268 -->
 
-  <!-- Row 1 · 3.3V · y=180 -->
+  <!-- Row 1 · VIN (5V) · y=180 -->
   <line x1="225" y1="180" x2="268" y2="180" stroke="#da3633" stroke-width="2.5" stroke-linecap="round"/>
   <circle cx="225" cy="180" r="5" fill="#da3633" stroke="#ff6e6a" stroke-width="1.5"/>
   <text x="216" y="177" text-anchor="end"
-        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#ff6e6a">3.3V</text>
+        font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#ff6e6a">VIN</text>
   <text x="216" y="190" text-anchor="end"
-        font-family="'Courier New', monospace" font-size="8" fill="#484f58">power out</text>
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">5V (USB)</text>
 
   <!-- Row 2 · GND · y=230 -->
   <line x1="225" y1="230" x2="268" y2="230" stroke="#6e7681" stroke-width="2.5" stroke-linecap="round"/>
@@ -134,15 +130,11 @@
 
   <!-- ══════════════════════════════════════════════════════════════════════
        RFIDuino BOARD   (right, x=775..960, y=88..628)
-       Pins on LEFT edge at x=775
        ══════════════════════════════════════════════════════════════════════ -->
-  <!-- PCB body -->
   <rect x="775" y="88" width="185" height="540"
         fill="#0a1929" stroke="#1f6feb" stroke-width="2" rx="8"/>
-  <!-- orientation notch top-left -->
   <polygon points="775,88 792,88 775,105" fill="#1f6feb" opacity="0.4"/>
 
-  <!-- Board label -->
   <text x="867" y="118" text-anchor="middle"
         font-family="'Courier New', monospace"
         font-size="14" font-weight="bold" fill="#58a6ff">RFIDuino</text>
@@ -150,10 +142,9 @@
         font-family="'Courier New', monospace"
         font-size="10" fill="#388bfd">Shield v1.2</text>
 
-  <!-- EM4095 chip package -->
+  <!-- EM4095 chip -->
   <rect x="800" y="148" width="134" height="75" rx="4"
         fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <!-- Chip pin 1 dot -->
   <circle cx="808" cy="156" r="3" fill="#30363d"/>
   <text x="867" y="184" text-anchor="middle"
         font-family="'Courier New', monospace" font-size="11" fill="#6e7681">EM4095</text>
@@ -162,7 +153,7 @@
   <text x="867" y="213" text-anchor="middle"
         font-family="'Courier New', monospace" font-size="8" fill="#30363d">125 kHz</text>
 
-  <!-- RFID antenna coil (concentric ellipses) -->
+  <!-- RFID antenna coil -->
   <g transform="translate(867,562)">
     <ellipse rx="55" ry="34" fill="none" stroke="#1f6feb" stroke-width="1.5" opacity="0.9"/>
     <ellipse rx="43" ry="26" fill="none" stroke="#1f6feb" stroke-width="1.5" opacity="0.7"/>
@@ -174,7 +165,6 @@
   </g>
 
   <!-- ── RFIDuino left-edge pins ────────────────────────────────────────── -->
-  <!-- Stub line from x=732 to x=775, dot at x=775, label to the right -->
 
   <!-- Row 1 · VCC · y=180 -->
   <line x1="732" y1="180" x2="775" y2="180" stroke="#da3633" stroke-width="2.5" stroke-linecap="round"/>
@@ -182,7 +172,7 @@
   <text x="784" y="177" text-anchor="start"
         font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#ff6e6a">VCC</text>
   <text x="784" y="190" text-anchor="start"
-        font-family="'Courier New', monospace" font-size="8" fill="#484f58">3.3 V power in</text>
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58">5V power in</text>
 
   <!-- Row 2 · GND · y=230 -->
   <line x1="732" y1="230" x2="775" y2="230" stroke="#6e7681" stroke-width="2.5" stroke-linecap="round"/>
@@ -249,21 +239,20 @@
         font-family="'Courier New', monospace" font-size="8" fill="#484f58">Green LED</text>
 
   <!-- ══════════════════════════════════════════════════════════════════════
-       CONNECTING WIRES    x=268 → x=732  (464 px gap)
-       Labels centered at x=500, with opaque backing rect
+       DIRECT CONNECTING WIRES   x=268 → x=732
+       (everything except DEMOD_OUT and RDY_CLK, which go through the LS)
        ══════════════════════════════════════════════════════════════════════ -->
 
-  <!-- ── Wire 1 · 3.3V / VCC (red) · y=180 ── -->
+  <!-- Wire 1 · 5V / VCC (red) · y=180 -->
   <line x1="268" y1="180" x2="732" y2="180"
         stroke="#da3633" stroke-width="2.5" stroke-linecap="round"/>
-  <!-- arrowhead pointing right (→) at RFIDuino end -->
   <polygon points="720,174 732,180 720,186" fill="#da3633"/>
   <rect x="390" y="170" width="220" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
   <text x="500" y="182" text-anchor="middle"
         font-family="'Courier New', monospace" font-size="10" fill="#ff6e6a"
-        >3.3V  →  VCC   (power)</text>
+        >5V  →  VCC   (power)</text>
 
-  <!-- ── Wire 2 · GND (gray) · y=230 ── -->
+  <!-- Wire 2 · GND (gray) · y=230 -->
   <line x1="268" y1="230" x2="732" y2="230"
         stroke="#6e7681" stroke-width="2.5" stroke-linecap="round"/>
   <rect x="390" y="220" width="220" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
@@ -271,26 +260,7 @@
         font-family="'Courier New', monospace" font-size="10" fill="#8b949e"
         >GND  ——  GND   (common ground)</text>
 
-  <!-- ── Wire 3 · DEMOD_OUT (orange) · y=285 · RTL ── -->
-  <line x1="268" y1="285" x2="732" y2="285"
-        stroke="#f0883e" stroke-width="2.5" stroke-linecap="round"/>
-  <!-- arrowhead pointing left (←) at ESP32 end -->
-  <polygon points="280,279 268,285 280,291" fill="#f0883e"/>
-  <rect x="355" y="275" width="290" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
-  <text x="500" y="287" text-anchor="middle"
-        font-family="'Courier New', monospace" font-size="10" fill="#f0883e"
-        >DEMOD_OUT  ←   (RF demodulated data)</text>
-
-  <!-- ── Wire 4 · RDY_CLK (blue) · y=340 · RTL ── -->
-  <line x1="268" y1="340" x2="732" y2="340"
-        stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round"/>
-  <polygon points="280,334 268,340 280,346" fill="#58a6ff"/>
-  <rect x="355" y="330" width="290" height="18" rx="3" fill="#0d1117" opacity="0.88"/>
-  <text x="500" y="342" text-anchor="middle"
-        font-family="'Courier New', monospace" font-size="10" fill="#79c0ff"
-        >RDY_CLK  ←   (ready / clock signal)</text>
-
-  <!-- ── Wire 5 · SHD (purple) · y=395 · LTR ── -->
+  <!-- Wire 5 · SHD (purple) · y=395 -->
   <line x1="268" y1="395" x2="732" y2="395"
         stroke="#b87fff" stroke-width="2.5" stroke-linecap="round"/>
   <polygon points="720,389 732,395 720,401" fill="#b87fff"/>
@@ -299,7 +269,7 @@
         font-family="'Courier New', monospace" font-size="10" fill="#d2a8ff"
         >SHD  →   (shutdown ctrl, HIGH=off)</text>
 
-  <!-- ── Wire 6 · MOD (teal) · y=450 · LTR ── -->
+  <!-- Wire 6 · MOD (teal) · y=450 -->
   <line x1="268" y1="450" x2="732" y2="450"
         stroke="#2dbdbd" stroke-width="2.5" stroke-linecap="round"/>
   <polygon points="720,444 732,450 720,456" fill="#2dbdbd"/>
@@ -308,7 +278,7 @@
         font-family="'Courier New', monospace" font-size="10" fill="#76e3ea"
         >MOD  →   (modulation control)</text>
 
-  <!-- ── Wire 7 · Buzzer (yellow) · y=505 · LTR ── -->
+  <!-- Wire 7 · Buzzer (yellow) · y=505 -->
   <line x1="268" y1="505" x2="732" y2="505"
         stroke="#d1a317" stroke-width="2.5" stroke-linecap="round"/>
   <polygon points="720,499 732,505 720,511" fill="#d1a317"/>
@@ -317,7 +287,7 @@
         font-family="'Courier New', monospace" font-size="10" fill="#e3b341"
         >Buzzer  →   (LEDC PWM audio)</text>
 
-  <!-- ── Wire 8 · Red LED (coral) · y=545 · LTR ── -->
+  <!-- Wire 8 · Red LED (coral) · y=545 -->
   <line x1="268" y1="545" x2="732" y2="545"
         stroke="#f85149" stroke-width="2.5" stroke-linecap="round"/>
   <polygon points="720,539 732,545 720,551" fill="#f85149"/>
@@ -326,7 +296,7 @@
         font-family="'Courier New', monospace" font-size="10" fill="#ff7b72"
         >Red LED  →   (access denied)</text>
 
-  <!-- ── Wire 9 · Green LED (green) · y=585 · LTR ── -->
+  <!-- Wire 9 · Green LED (green) · y=585 -->
   <line x1="268" y1="585" x2="732" y2="585"
         stroke="#3fb950" stroke-width="2.5" stroke-linecap="round"/>
   <polygon points="720,579 732,585 720,591" fill="#3fb950"/>
@@ -336,11 +306,91 @@
         >Green LED  →   (access granted)</text>
 
   <!-- ══════════════════════════════════════════════════════════════════════
+       LEVEL SHIFTER MODULE   x=415..585, y=252..372
+       DEMOD_OUT (orange, y=285) and RDY_CLK (blue, y=340) pass through it
+       ══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Wire segments LEFT of LS (LV / 3.3V side, ESP32 → LS) -->
+  <!-- DEMOD_OUT left segment -->
+  <line x1="268" y1="285" x2="415" y2="285"
+        stroke="#f0883e" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- RDY_CLK left segment -->
+  <line x1="268" y1="340" x2="415" y2="340"
+        stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Arrowheads at ESP32 end (← input) -->
+  <polygon points="280,279 268,285 280,291" fill="#f0883e"/>
+  <polygon points="280,334 268,340 280,346" fill="#58a6ff"/>
+
+  <!-- Wire segments RIGHT of LS (HV / 5V side, LS → RFIDuino) -->
+  <!-- DEMOD_OUT right segment -->
+  <line x1="585" y1="285" x2="732" y2="285"
+        stroke="#f0883e" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- RDY_CLK right segment -->
+  <line x1="585" y1="340" x2="732" y2="340"
+        stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- ── Level Shifter box ──────────────────────────────────────────────── -->
+  <rect x="415" y="252" width="170" height="120"
+        fill="#05111f" stroke="#388bfd" stroke-width="1.5" rx="5"/>
+
+  <!-- Title -->
+  <text x="500" y="267" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="10" font-weight="bold" fill="#58a6ff"
+        >Level Shifter</text>
+  <text x="500" y="279" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="8" fill="#1f6feb"
+        >BSS138  ·  4-channel  ·  bi-directional</text>
+
+  <!-- LV / HV side labels -->
+  <text x="422" y="314" text-anchor="start"
+        font-family="'Courier New', monospace" font-size="9" font-weight="bold" fill="#3fb950">LV  3.3V</text>
+  <text x="578" y="314" text-anchor="end"
+        font-family="'Courier New', monospace" font-size="9" font-weight="bold" fill="#da3633">HV  5V</text>
+
+  <!-- Center divider -->
+  <line x1="500" y1="282" x2="500" y2="362" stroke="#21262d" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- Channel 1: DEMOD_OUT (y=285) -->
+  <!-- Pin pads where wire enters/exits the LS -->
+  <circle cx="430" cy="285" r="4" fill="#f0883e" stroke="#0d1117" stroke-width="1"/>
+  <circle cx="570" cy="285" r="4" fill="#f0883e" stroke="#0d1117" stroke-width="1"/>
+  <!-- Channel label below the wire -->
+  <text x="500" y="298" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="8" fill="#f0883e"
+        >CH1  ·  DEMOD_OUT</text>
+
+  <!-- Channel 2: RDY_CLK (y=340) -->
+  <circle cx="430" cy="340" r="4" fill="#58a6ff" stroke="#0d1117" stroke-width="1"/>
+  <circle cx="570" cy="340" r="4" fill="#58a6ff" stroke="#0d1117" stroke-width="1"/>
+  <!-- Channel label above the wire -->
+  <text x="500" y="333" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="8" fill="#79c0ff"
+        >CH2  ·  RDY_CLK</text>
+
+  <!-- Power note at bottom of LS box -->
+  <text x="500" y="357" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58"
+        >LV ← ESP32 3.3V pin</text>
+  <text x="500" y="368" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="8" fill="#484f58"
+        >HV ← VIN  ·  GND ← GND</text>
+
+  <!-- Tap line: 5V wire (y=180) feeds down into LS HV pin -->
+  <line x1="572" y1="180" x2="572" y2="252"
+        stroke="#da3633" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6"/>
+  <polygon points="567,246 572,258 577,246" fill="#da3633" opacity="0.6"/>
+
+  <!-- Tap line: GND wire (y=230) feeds down into LS GND pin -->
+  <line x1="430" y1="230" x2="430" y2="252"
+        stroke="#6e7681" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6"/>
+  <polygon points="425,246 430,258 435,246" fill="#6e7681" opacity="0.6"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
        FOOTER
        ══════════════════════════════════════════════════════════════════════ -->
   <line x1="50" y1="636" x2="950" y2="636" stroke="#21262d" stroke-width="1"/>
 
-  <!-- Legend: direction key -->
   <text x="185" y="656" text-anchor="middle"
         font-family="'Courier New', monospace" font-size="10" fill="#6e7681"
         >← = RFIDuino → ESP32</text>
@@ -351,12 +401,10 @@
         font-family="'Courier New', monospace" font-size="10" fill="#6e7681"
         >—— = bidirectional / power</text>
 
-  <!-- Notes row -->
   <text x="500" y="675" text-anchor="middle"
         font-family="'Courier New', monospace" font-size="9" fill="#484f58"
-        >SHD + MOD both LOW for continuous read  ·  SHD HIGH = low-power shutdown  ·  source: sentinel/src/main.rs</text>
+        >SHD + MOD both LOW for continuous read  ·  SHD HIGH = shutdown  ·  source: sentinel/src/main.rs</text>
 
-  <!-- Bottom border -->
   <line x1="50" y1="687" x2="950" y2="687" stroke="#161b22" stroke-width="1"/>
 
 </svg>
