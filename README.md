@@ -313,6 +313,10 @@ This script:
 4. Installs the systemd unit file
 5. Starts the service
 
+### Home Assistant integration
+
+Panopticon can publish lock state, RFID scans, and sentinel status to Home Assistant via MQTT. Set `MQTT_HOST` to enable. See [docs/home-assistant.md](docs/home-assistant.md) for full setup instructions.
+
 ### Caddy setup
 
 Copy the Caddyfile or add its contents to your existing Caddy config:
