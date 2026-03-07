@@ -27,8 +27,10 @@ use crate::AppState;
 const AUTHORIZE_URI: &str = "https://oauth.u-tec.com/authorize";
 const TOKEN_URI: &str = "https://oauth.u-tec.com/token";
 
-/// Callback host
-const REDIRECT_HOST: &str = "https://example.com";
+/// Base URL loaded from environment, used for OAuth redirect URI and webhook registration.
+static BASE_URL: LazyLock<String> = LazyLock::new(|| {
+    std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:5173".to_string())
+});
 
 /// OAuth2 credentials loaded from environment variables.
 /// Required: UTEC_CLIENT_ID, UTEC_CLIENT_SECRET
@@ -51,7 +53,7 @@ pub fn router() -> Router<AppState> {
 /// Redirect the user to U-Tec's OAuth2 authorization page.
 async fn login(_user: AuthUser) -> Response {
     let state = generate_state();
-    let redirect_uri = format!("{}/auth/callback", REDIRECT_HOST);
+    let redirect_uri = format!("{}/auth/callback", *BASE_URL);
 
     let authorize_url = format!(
         "{}?response_type=code&client_id={}&client_secret={}&scope={}&redirect_uri={}&state={}",
@@ -157,7 +159,7 @@ async fn callback(State(state): State<AppState>, Query(params): Query<CallbackPa
 
     // Register webhook with U-Tec (after persisting, so we can always
     // validate notifications even if this call fails).
-    let webhook_url = format!("{}/api/webhooks/utec", REDIRECT_HOST);
+    let webhook_url = format!("{}/api/webhooks/utec", *BASE_URL);
     match client
         .set_notification_url(&webhook_url, &notification_token)
         .await
@@ -226,7 +228,7 @@ struct TokenResponse {
 
 /// Exchange an authorization code for an access token.
 async fn exchange_code(code: &str) -> anyhow::Result<TokenResponse> {
-    let redirect_uri = format!("{}/auth/callback", REDIRECT_HOST);
+    let redirect_uri = format!("{}/auth/callback", *BASE_URL);
 
     let params = [
         ("grant_type", "authorization_code"),
