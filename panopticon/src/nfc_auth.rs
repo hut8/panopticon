@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{delete, get, post},
@@ -16,8 +16,8 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/nfc/login", post(nfc_login))
         .route("/nfc/register", post(nfc_register))
-        .route("/nfc/tokens", get(nfc_list_tokens))
-        .route("/nfc/tokens/{id}", delete(nfc_delete_token))
+        .route("/nfc/serial", get(nfc_get_serial))
+        .route("/nfc/serial", delete(nfc_unregister))
 }
 
 fn is_secure() -> bool {
@@ -44,9 +44,8 @@ async fn nfc_login(State(state): State<AppState>, Json(body): Json<NfcLoginReque
     }
 
     let row: Option<(uuid::Uuid, String, bool, bool)> = match sqlx::query_as(
-        "SELECT u.id, u.email, u.email_confirmed, u.is_approved \
-         FROM users u JOIN nfc_tokens n ON u.id = n.user_id \
-         WHERE n.serial = $1",
+        "SELECT id, email, email_confirmed, is_approved \
+         FROM users WHERE nfc_serial = $1",
     )
     .bind(&serial)
     .fetch_optional(&state.db)
@@ -100,7 +99,6 @@ async fn nfc_login(State(state): State<AppState>, Json(body): Json<NfcLoginReque
 #[derive(Deserialize)]
 struct NfcRegisterRequest {
     serial: String,
-    label: Option<String>,
 }
 
 async fn nfc_register(
@@ -113,100 +111,79 @@ async fn nfc_register(
         return json_error(StatusCode::BAD_REQUEST, "Missing NFC serial number");
     }
 
-    let label = body.label.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
-
-    let row: Option<(uuid::Uuid,)> = match sqlx::query_as(
-        "INSERT INTO nfc_tokens (user_id, serial, label) VALUES ($1, $2, $3) \
-         ON CONFLICT (serial) DO NOTHING \
-         RETURNING id",
+    // Check if another user already has this serial
+    let existing: Option<(uuid::Uuid,)> = match sqlx::query_as(
+        "SELECT id FROM users WHERE nfc_serial = $1 AND id != $2",
     )
-    .bind(user.id)
     .bind(&serial)
-    .bind(label)
+    .bind(user.id)
     .fetch_optional(&state.db)
     .await
     {
         Ok(row) => row,
         Err(e) => {
-            error!("Failed to register NFC token: {e}");
+            error!("Failed to check NFC serial: {e}");
             return json_error(StatusCode::INTERNAL_SERVER_ERROR, "Registration failed");
         }
     };
 
-    match row {
-        Some((id,)) => {
-            info!(user_id = %user.id, serial = %serial, "NFC token registered");
-            Json(serde_json::json!({
-                "id": id,
-                "serial": serial,
-                "label": label,
-            }))
-            .into_response()
-        }
-        None => json_error(
-            StatusCode::CONFLICT,
-            "This NFC tag is already registered",
-        ),
+    if existing.is_some() {
+        return json_error(StatusCode::CONFLICT, "This NFC tag is already registered to another account");
     }
-}
 
-// ── NFC List Tokens ──────────────────────────────────────────────────────────
-
-async fn nfc_list_tokens(State(state): State<AppState>, user: AuthUser) -> Response {
-    let rows: Vec<(uuid::Uuid, String, Option<String>, chrono::DateTime<chrono::Utc>)> =
-        match sqlx::query_as(
-            "SELECT id, serial, label, created_at FROM nfc_tokens WHERE user_id = $1 ORDER BY created_at DESC",
-        )
-        .bind(user.id)
-        .fetch_all(&state.db)
-        .await
-        {
-            Ok(rows) => rows,
-            Err(e) => {
-                error!("Failed to list NFC tokens: {e}");
-                return json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to list tokens");
-            }
-        };
-
-    let tokens: Vec<serde_json::Value> = rows
-        .into_iter()
-        .map(|(id, serial, label, created_at)| {
-            serde_json::json!({
-                "id": id,
-                "serial": serial,
-                "label": label,
-                "created_at": created_at,
-            })
-        })
-        .collect();
-
-    Json(tokens).into_response()
-}
-
-// ── NFC Delete Token ─────────────────────────────────────────────────────────
-
-async fn nfc_delete_token(
-    State(state): State<AppState>,
-    user: AuthUser,
-    Path(id): Path<uuid::Uuid>,
-) -> Response {
-    let result = match sqlx::query("DELETE FROM nfc_tokens WHERE id = $1 AND user_id = $2")
-        .bind(id)
+    match sqlx::query("UPDATE users SET nfc_serial = $1 WHERE id = $2")
+        .bind(&serial)
         .bind(user.id)
         .execute(&state.db)
         .await
     {
-        Ok(r) => r,
+        Ok(_) => {
+            info!(user_id = %user.id, serial = %serial, "NFC serial registered");
+            Json(serde_json::json!({ "serial": serial })).into_response()
+        }
         Err(e) => {
-            error!("Failed to delete NFC token: {e}");
-            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete token");
+            error!("Failed to register NFC serial: {e}");
+            json_error(StatusCode::INTERNAL_SERVER_ERROR, "Registration failed")
+        }
+    }
+}
+
+// ── NFC Get Serial ───────────────────────────────────────────────────────────
+
+async fn nfc_get_serial(State(state): State<AppState>, user: AuthUser) -> Response {
+    let row: Option<(Option<String>,)> = match sqlx::query_as(
+        "SELECT nfc_serial FROM users WHERE id = $1",
+    )
+    .bind(user.id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            error!("Failed to get NFC serial: {e}");
+            return json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to get NFC serial");
         }
     };
 
-    if result.rows_affected() == 0 {
-        return json_error(StatusCode::NOT_FOUND, "Token not found");
-    }
+    let serial = row.and_then(|(s,)| s);
+    Json(serde_json::json!({ "serial": serial })).into_response()
+}
 
-    info!(user_id = %user.id, token_id = %id, "NFC token removed");
-    StatusCode::NO_CONTENT.into_response()
+// ── NFC Unregister ───────────────────────────────────────────────────────────
+
+async fn nfc_unregister(State(state): State<AppState>, user: AuthUser) -> Response {
+    match sqlx::query("UPDATE users SET nfc_serial = NULL WHERE id = $1")
+        .bind(user.id)
+        .execute(&state.db)
+        .await
+    {
+        Ok(_) => {
+            info!(user_id = %user.id, "NFC serial removed");
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(e) => {
+            error!("Failed to remove NFC serial: {e}");
+            json_error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to remove NFC serial")
+        }
+    }
 }

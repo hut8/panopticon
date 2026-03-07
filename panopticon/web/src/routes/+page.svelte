@@ -78,14 +78,8 @@
 	let currentUserEmail: string | null = $state(null);
 
 	// NFC state
-	interface NfcToken {
-		id: string;
-		serial: string;
-		label: string | null;
-		created_at: string;
-	}
 	let nfcSupported = $state(typeof window !== 'undefined' && 'NDEFReader' in window);
-	let nfcTokens: NfcToken[] = $state([]);
+	let nfcSerial: string | null = $state(null);
 	let nfcRegistering = $state(false);
 	let nfcRegisterStatus: string | null = $state(null);
 	let nfcError: string | null = $state(null);
@@ -383,16 +377,19 @@
 
 	// ── NFC token management ─────────────────────────────────────────────
 
-	async function loadNfcTokens() {
+	async function loadNfcSerial() {
 		try {
-			const res = await fetch('/api/auth/nfc/tokens');
-			if (res.ok) nfcTokens = await res.json();
+			const res = await fetch('/api/auth/nfc/serial');
+			if (res.ok) {
+				const data = await res.json();
+				nfcSerial = data.serial;
+			}
 		} catch {
 			// ignore
 		}
 	}
 
-	async function registerNfcToken() {
+	async function registerNfcTag() {
 		if (!nfcSupported || nfcRegistering) return;
 
 		nfcError = null;
@@ -418,7 +415,7 @@
 					if (!res.ok) {
 						nfcError = data.error || 'Failed to register NFC tag';
 					} else {
-						nfcTokens = [data, ...nfcTokens];
+						nfcSerial = data.serial;
 					}
 				} catch {
 					nfcError = 'Network error. Please try again.';
@@ -452,10 +449,10 @@
 		nfcRegisterStatus = null;
 	}
 
-	async function removeNfcToken(id: string) {
+	async function removeNfcTag() {
 		try {
-			const res = await fetch(`/api/auth/nfc/tokens/${id}`, { method: 'DELETE' });
-			if (res.ok) nfcTokens = nfcTokens.filter((t) => t.id !== id);
+			const res = await fetch('/api/auth/nfc/serial', { method: 'DELETE' });
+			if (res.ok) nfcSerial = null;
 		} catch {
 			// ignore
 		}
@@ -656,7 +653,7 @@
 		loadCards();
 		loadScanLog();
 		loadSentinels();
-		loadNfcTokens();
+		loadNfcSerial();
 		loadNotificationPrefs();
 		initPushSubscription();
 		connectWebSocket();
@@ -1025,11 +1022,11 @@
 					{/if}
 				</div>
 
-				<!-- NFC Login Tags -->
+				<!-- NFC Login Tag -->
 				{#if nfcSupported}
 					<div class="card preset-filled-surface-900 space-y-4 p-6">
 						<div class="flex items-center justify-between">
-							<h2 class="h5">NFC Login Tags</h2>
+							<h2 class="h5">NFC Login Tag</h2>
 							{#if nfcRegistering}
 								<button
 									class="btn btn-sm preset-outlined-surface-500"
@@ -1037,10 +1034,17 @@
 								>
 									Cancel
 								</button>
+							{:else if nfcSerial}
+								<button
+									class="btn btn-sm preset-outlined-error-500"
+									onclick={removeNfcTag}
+								>
+									Remove
+								</button>
 							{:else}
 								<button
 									class="btn btn-sm preset-outlined-primary-500"
-									onclick={registerNfcToken}
+									onclick={registerNfcTag}
 								>
 									Register Tag
 								</button>
@@ -1060,29 +1064,14 @@
 								</svg>
 								<p class="text-sm text-primary-300">{nfcRegisterStatus}</p>
 							</div>
-						{/if}
-
-						{#if nfcTokens.length === 0 && !nfcRegistering}
-							<p class="text-sm text-surface-400">
-								No NFC tags registered. Register a tag to sign in by tapping.
-							</p>
-						{:else}
-							<div class="space-y-2">
-								{#each nfcTokens as token (token.id)}
-									<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
-										<div>
-											<p class="font-mono text-sm text-surface-200">{token.serial}</p>
-											<p class="text-xs text-surface-500">{formatDate(token.created_at)}</p>
-										</div>
-										<button
-											class="text-xs text-error-400 hover:text-error-300 cursor-pointer"
-											onclick={() => removeNfcToken(token.id)}
-										>
-											Remove
-										</button>
-									</div>
-								{/each}
+						{:else if nfcSerial}
+							<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
+								<p class="font-mono text-sm text-surface-200">{nfcSerial}</p>
 							</div>
+						{:else}
+							<p class="text-sm text-surface-400">
+								Register an NFC tag to sign in by tapping.
+							</p>
 						{/if}
 					</div>
 				{/if}
