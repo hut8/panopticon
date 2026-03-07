@@ -111,6 +111,8 @@ If you need maximum range:
 
 You are NOT stacking the shield — you wire point-to-point from the ESP32 to the shield's Arduino header pads or RobotGeek 3-pin connectors.
 
+See **[`sentinel/wiring-diagram.svg`](sentinel/wiring-diagram.svg)** for a full wiring diagram.
+
 ```
 ESP32 DevKit               RFIDuino Shield v1.2        Function
 ─────────────              ────────────────────        ────────
