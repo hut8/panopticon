@@ -7,6 +7,7 @@ mod geo_access;
 mod ip_whitelist;
 mod middleware;
 mod mqtt;
+mod nfc_auth;
 mod oauth;
 mod push;
 mod sentinel;
@@ -111,6 +112,7 @@ async fn main() -> anyhow::Result<()> {
     // Routes behind the IP whitelist (all normal app routes)
     let protected = Router::new()
         .nest("/api/auth", email_auth::router())
+        .nest("/api/auth", nfc_auth::router())
         .nest("/api/sentinel", sentinel::router())
         .nest("/api", push::router())
         .nest("/api", api::router())

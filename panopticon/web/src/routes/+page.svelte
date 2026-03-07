@@ -77,6 +77,19 @@
 	// Current user
 	let currentUserEmail: string | null = $state(null);
 
+	// NFC state
+	interface NfcToken {
+		id: string;
+		serial: string;
+		label: string | null;
+		created_at: string;
+	}
+	let nfcSupported = $state(typeof window !== 'undefined' && 'NDEFReader' in window);
+	let nfcTokens: NfcToken[] = $state([]);
+	let nfcRegistering = $state(false);
+	let nfcRegisterStatus: string | null = $state(null);
+	let nfcError: string | null = $state(null);
+
 	// Notification state
 	let browserNotifications: boolean = $state(
 		typeof Notification !== 'undefined' && Notification.permission === 'granted'
@@ -368,6 +381,86 @@
 		});
 	}
 
+	// ── NFC token management ─────────────────────────────────────────────
+
+	async function loadNfcTokens() {
+		try {
+			const res = await fetch('/api/auth/nfc/tokens');
+			if (res.ok) nfcTokens = await res.json();
+		} catch {
+			// ignore
+		}
+	}
+
+	async function registerNfcToken() {
+		if (!nfcSupported || nfcRegistering) return;
+
+		nfcError = null;
+		nfcRegisterStatus = 'Hold your NFC tag near the device...';
+		nfcRegistering = true;
+
+		try {
+			const ndef = new (window as any).NDEFReader();
+			await ndef.scan();
+
+			ndef.addEventListener('reading', async ({ serialNumber }: { serialNumber: string }) => {
+				nfcRegisterStatus = 'Tag detected, registering...';
+
+				try {
+					const res = await fetch('/api/auth/nfc/register', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ serial: serialNumber })
+					});
+
+					const data = await res.json();
+
+					if (!res.ok) {
+						nfcError = data.error || 'Failed to register NFC tag';
+					} else {
+						nfcTokens = [data, ...nfcTokens];
+					}
+				} catch {
+					nfcError = 'Network error. Please try again.';
+				} finally {
+					nfcRegisterStatus = null;
+					nfcRegistering = false;
+				}
+			});
+
+			ndef.addEventListener('readingerror', () => {
+				nfcError = 'Could not read NFC tag. Try again.';
+				nfcRegisterStatus = null;
+				nfcRegistering = false;
+			});
+		} catch (e: any) {
+			if (e.name === 'NotAllowedError') {
+				nfcError = 'NFC permission denied.';
+			} else if (e.name === 'NotSupportedError') {
+				nfcError = 'NFC is not available on this device.';
+				nfcSupported = false;
+			} else {
+				nfcError = 'Failed to start NFC scan.';
+			}
+			nfcRegisterStatus = null;
+			nfcRegistering = false;
+		}
+	}
+
+	function cancelNfcRegister() {
+		nfcRegistering = false;
+		nfcRegisterStatus = null;
+	}
+
+	async function removeNfcToken(id: string) {
+		try {
+			const res = await fetch(`/api/auth/nfc/tokens/${id}`, { method: 'DELETE' });
+			if (res.ok) nfcTokens = nfcTokens.filter((t) => t.id !== id);
+		} catch {
+			// ignore
+		}
+	}
+
 	// ── WebSocket live updates ────────────────────────────────────────────
 
 	let ws: WebSocket | null = null;
@@ -563,6 +656,7 @@
 		loadCards();
 		loadScanLog();
 		loadSentinels();
+		loadNfcTokens();
 		loadNotificationPrefs();
 		initPushSubscription();
 		connectWebSocket();
@@ -930,6 +1024,68 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- NFC Login Tags -->
+				{#if nfcSupported}
+					<div class="card preset-filled-surface-900 space-y-4 p-6">
+						<div class="flex items-center justify-between">
+							<h2 class="h5">NFC Login Tags</h2>
+							{#if nfcRegistering}
+								<button
+									class="btn btn-sm preset-outlined-surface-500"
+									onclick={cancelNfcRegister}
+								>
+									Cancel
+								</button>
+							{:else}
+								<button
+									class="btn btn-sm preset-outlined-primary-500"
+									onclick={registerNfcToken}
+								>
+									Register Tag
+								</button>
+							{/if}
+						</div>
+
+						{#if nfcError}
+							<div class="rounded-md bg-error-500/10 px-3 py-2 text-sm text-error-400">
+								{nfcError}
+							</div>
+						{/if}
+
+						{#if nfcRegisterStatus}
+							<div class="flex items-center gap-3 rounded-md bg-primary-500/10 px-3 py-2">
+								<svg class="h-5 w-5 text-primary-400 animate-pulse flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
+								</svg>
+								<p class="text-sm text-primary-300">{nfcRegisterStatus}</p>
+							</div>
+						{/if}
+
+						{#if nfcTokens.length === 0 && !nfcRegistering}
+							<p class="text-sm text-surface-400">
+								No NFC tags registered. Register a tag to sign in by tapping.
+							</p>
+						{:else}
+							<div class="space-y-2">
+								{#each nfcTokens as token (token.id)}
+									<div class="flex items-center justify-between rounded-md bg-surface-800 px-3 py-2">
+										<div>
+											<p class="font-mono text-sm text-surface-200">{token.serial}</p>
+											<p class="text-xs text-surface-500">{formatDate(token.created_at)}</p>
+										</div>
+										<button
+											class="text-xs text-error-400 hover:text-error-300 cursor-pointer"
+											onclick={() => removeNfcToken(token.id)}
+										>
+											Remove
+										</button>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
 
 				<!-- Notifications -->
 				<div class="card preset-filled-surface-900 space-y-4 p-6">
