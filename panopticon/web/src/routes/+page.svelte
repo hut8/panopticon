@@ -609,7 +609,7 @@
 			</div>
 			<div class="flex items-center justify-end gap-3">
 				{#if currentUserEmail}
-					<span class="text-sm text-surface-400 truncate">{currentUserEmail}</span>
+					<span class="text-sm text-surface-400 truncate min-w-0">{currentUserEmail}</span>
 				{/if}
 				<button
 					class="btn btn-sm preset-outlined-surface-500 flex-shrink-0"
