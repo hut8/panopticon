@@ -96,8 +96,9 @@ fn bridge_state_topic() -> String {
 }
 
 fn discovery_topic(config: &MqttConfig, component: &str, object_id: &str) -> String {
+    let sanitized = object_id.replace(':', "_");
     format!(
-        "{}/{component}/panopticon/{object_id}/config",
+        "{}/{component}/panopticon/{sanitized}/config",
         config.discovery_prefix
     )
 }
