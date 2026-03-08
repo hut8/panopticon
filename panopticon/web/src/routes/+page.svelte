@@ -591,8 +591,8 @@
 <main class="flex flex-1 justify-center p-6 lg:pt-10">
 	<div class="w-full max-w-5xl space-y-6">
 		<!-- Header -->
-		<div class="flex items-center justify-between">
-			<div class="flex items-center gap-3">
+		<div class="space-y-1">
+			<div class="flex items-center justify-between">
 				<h1 class="h2">Panopticon</h1>
 				<span
 					class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium {wsConnected
@@ -607,12 +607,12 @@
 					{wsConnected ? 'Connected' : 'Reconnecting'}
 				</span>
 			</div>
-			<div class="flex items-center gap-3">
+			<div class="flex items-center justify-end gap-3">
 				{#if currentUserEmail}
-					<span class="text-sm text-surface-400">{currentUserEmail}</span>
+					<span class="text-sm text-surface-400 truncate">{currentUserEmail}</span>
 				{/if}
 				<button
-					class="text-sm text-surface-500 hover:text-surface-300 cursor-pointer"
+					class="btn btn-sm preset-outlined-surface-500 flex-shrink-0"
 					onclick={handleLogout}
 				>
 					Sign out
