@@ -9,6 +9,7 @@ use std::time::Duration;
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
+use crate::lock_log;
 use crate::middleware::AuthUser;
 use crate::utec::{Device, DeviceWithStates, LockUser, UTec};
 use crate::ws::WsEvent;
@@ -117,7 +118,7 @@ async fn list_devices(
 }
 
 async fn lock_device(
-    _user: AuthUser,
+    user: AuthUser,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<LockActionResponse>, ApiError> {
@@ -138,7 +139,7 @@ async fn lock_device(
         (StatusCode::BAD_GATEWAY, "Failed to lock device")
     })?;
 
-    let lock_state = handle_lock_response(&state, &id, device, &results);
+    let lock_state = handle_lock_response(&state, &id, device, &results, Some(user.id)).await;
 
     Ok(Json(LockActionResponse {
         success: true,
@@ -147,7 +148,7 @@ async fn lock_device(
 }
 
 async fn unlock_device(
-    _user: AuthUser,
+    user: AuthUser,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<LockActionResponse>, ApiError> {
@@ -168,7 +169,7 @@ async fn unlock_device(
         (StatusCode::BAD_GATEWAY, "Failed to unlock device")
     })?;
 
-    let lock_state = handle_lock_response(&state, &id, device, &results);
+    let lock_state = handle_lock_response(&state, &id, device, &results, Some(user.id)).await;
 
     Ok(Json(LockActionResponse {
         success: true,
@@ -184,16 +185,18 @@ const MAX_DEFERRED_WAIT_SECS: u64 = 60;
 /// response (st.deferredResponse), spawn a background task that waits the
 /// indicated number of seconds, then queries the device and broadcasts the
 /// resulting lock state.
-pub fn handle_lock_response(
+pub async fn handle_lock_response(
     state: &AppState,
     device_id: &str,
     device: &Device,
     results: &[DeviceWithStates],
+    user_id: Option<uuid::Uuid>,
 ) -> Option<String> {
     let device_result = results.iter().find(|s| s.id == device_id);
     let lock_state = device_result.and_then(|s| s.lock_state());
 
     if let Some(ref ls) = lock_state {
+        lock_log::record(&state.db, device_id, ls, "api", user_id).await;
         let _ = state.events.send(WsEvent::LockState {
             device_id: device_id.to_string(),
             lock_state: ls.clone(),
@@ -227,6 +230,7 @@ pub fn handle_lock_response(
                 Ok(device_states) => {
                     if let Some(ls) = device_states.lock_state() {
                         debug!(device_id, lock_state = %ls, "Deferred lock state resolved");
+                        lock_log::record(&state.db, &device_id, &ls, "api_deferred", user_id).await;
                         let _ = state.events.send(WsEvent::LockState {
                             device_id,
                             lock_state: ls,

@@ -405,7 +405,7 @@ async fn handle_lock_command(state: &AppState, device_id: &str, payload: &str) {
 
     match result {
         Ok(results) => {
-            crate::api::handle_lock_response(state, device_id, device, &results);
+            crate::api::handle_lock_response(state, device_id, device, &results, None).await;
             info!(device_id, command, "MQTT: lock command executed");
         }
         Err(e) => error!(device_id, command, "MQTT: lock command failed: {e:#}"),
