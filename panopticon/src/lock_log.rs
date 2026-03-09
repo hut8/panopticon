@@ -19,6 +19,12 @@ pub async fn record(
     .execute(db)
     .await
     {
-        tracing::error!("Failed to log lock state change: {e}");
+        tracing::error!(
+            device_id,
+            lock_state,
+            source,
+            ?user_id,
+            "Failed to log lock state change: {e:#}"
+        );
     }
 }
