@@ -5,6 +5,7 @@ mod email;
 mod email_auth;
 mod geo_access;
 mod ip_whitelist;
+pub mod lock_log;
 mod middleware;
 mod mqtt;
 mod oauth;

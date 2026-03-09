@@ -20,6 +20,7 @@ use subtle::ConstantTimeEq;
 use tower_http::limit::RequestBodyLimitLayer;
 use tracing::info;
 
+use crate::lock_log;
 use crate::utec::DeviceWithStates;
 use crate::ws::WsEvent;
 use crate::AppState;
@@ -76,6 +77,7 @@ async fn handle_utec_notification(
                 lock_state = %lock_state,
                 "Webhook: lock state change"
             );
+            lock_log::record(&state.db, &device.id, &lock_state, "webhook", None).await;
             let _ = state.events.send(WsEvent::LockState {
                 device_id: device.id.clone(),
                 lock_state,
