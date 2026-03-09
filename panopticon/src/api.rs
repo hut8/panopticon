@@ -139,7 +139,8 @@ async fn lock_device(
         (StatusCode::BAD_GATEWAY, "Failed to lock device")
     })?;
 
-    let lock_state = handle_lock_response(&state, &id, device, &results, Some(user.id)).await;
+    let lock_state =
+        handle_lock_response(&state, &id, device, &results, "api", Some(user.id)).await;
 
     Ok(Json(LockActionResponse {
         success: true,
@@ -169,7 +170,8 @@ async fn unlock_device(
         (StatusCode::BAD_GATEWAY, "Failed to unlock device")
     })?;
 
-    let lock_state = handle_lock_response(&state, &id, device, &results, Some(user.id)).await;
+    let lock_state =
+        handle_lock_response(&state, &id, device, &results, "api", Some(user.id)).await;
 
     Ok(Json(LockActionResponse {
         success: true,
@@ -190,13 +192,14 @@ pub async fn handle_lock_response(
     device_id: &str,
     device: &Device,
     results: &[DeviceWithStates],
+    source: &str,
     user_id: Option<uuid::Uuid>,
 ) -> Option<String> {
     let device_result = results.iter().find(|s| s.id == device_id);
     let lock_state = device_result.and_then(|s| s.lock_state());
 
     if let Some(ref ls) = lock_state {
-        lock_log::record(&state.db, device_id, ls, "api", user_id).await;
+        lock_log::record(&state.db, device_id, ls, source, user_id).await;
         let _ = state.events.send(WsEvent::LockState {
             device_id: device_id.to_string(),
             lock_state: ls.clone(),
@@ -218,6 +221,7 @@ pub async fn handle_lock_response(
         let state = state.clone();
         let device_id = device_id.to_string();
         let device = device.clone();
+        let deferred_source = format!("{source}_deferred");
         tokio::spawn(async move {
             debug!(device_id, seconds, "Waiting for deferred lock response");
             tokio::time::sleep(Duration::from_secs(seconds)).await;
@@ -230,7 +234,8 @@ pub async fn handle_lock_response(
                 Ok(device_states) => {
                     if let Some(ls) = device_states.lock_state() {
                         debug!(device_id, lock_state = %ls, "Deferred lock state resolved");
-                        lock_log::record(&state.db, &device_id, &ls, "api_deferred", user_id).await;
+                        lock_log::record(&state.db, &device_id, &ls, &deferred_source, user_id)
+                            .await;
                         let _ = state.events.send(WsEvent::LockState {
                             device_id,
                             lock_state: ls,

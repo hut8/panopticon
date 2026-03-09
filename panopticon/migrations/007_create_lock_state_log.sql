@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS lock_state_log (
     id         UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
     device_id  TEXT NOT NULL,
     lock_state TEXT NOT NULL,              -- 'locked', 'unlocked'
-    source     TEXT NOT NULL,              -- 'webhook', 'api', 'api_deferred'
+    source     TEXT NOT NULL,              -- 'webhook', 'api', 'api_deferred', 'mqtt', 'mqtt_deferred'
     user_id    UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
