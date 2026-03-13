@@ -18,7 +18,7 @@ use esp_idf_svc::hal::delay::Ets;
 use esp_idf_svc::hal::gpio::{AnyOutputPin, OutputPin, PinDriver};
 use esp_idf_svc::hal::peripheral::Peripheral;
 use esp_idf_svc::hal::spi::config::Config as SpiConfig;
-use esp_idf_svc::hal::spi::{SpiDeviceDriver, SpiDriverConfig};
+use esp_idf_svc::hal::spi::{SpiDeviceDriver, SpiDriver, SpiDriverConfig};
 use esp_idf_svc::hal::units::FromValueType;
 use log::warn;
 use mipidsi::interface::SpiInterface;
@@ -45,11 +45,11 @@ const HEIGHT: u16 = 320;
 /// Wrapper around the ST7789 display with a status UI.
 pub struct StatusDisplay<'a> {
     display: mipidsi::Display<
-        SpiInterface<'a, SpiDeviceDriver<'a>, PinDriver<'a, AnyOutputPin, esp_idf_svc::hal::gpio::Output>>,
+        SpiInterface<'a, SpiDeviceDriver<'a, SpiDriver<'a>>, PinDriver<'a, AnyOutputPin, esp_idf_svc::hal::gpio::Output>>,
         ST7789,
         PinDriver<'a, AnyOutputPin, esp_idf_svc::hal::gpio::Output>,
     >,
-    backlight: PinDriver<'a, AnyOutputPin, esp_idf_svc::hal::gpio::Output>,
+    _backlight: PinDriver<'a, AnyOutputPin, esp_idf_svc::hal::gpio::Output>,
     // Cached state so we only redraw what changed
     ip_addr: heapless_string::HString,
     hostname: heapless_string::HString,
@@ -140,7 +140,7 @@ impl<'a> StatusDisplay<'a> {
 
         let mut s = Self {
             display,
-            backlight,
+            _backlight: backlight,
             ip_addr: heapless_string::HString::new(),
             hostname: heapless_string::HString::new(),
             server_connected: false,
@@ -164,10 +164,10 @@ impl<'a> StatusDisplay<'a> {
         }
     }
 
-    /// Update the displayed hostname.
+    /// Update the displayed hostname (shown in the header bar).
     pub fn set_hostname(&mut self, name: &str) {
         if self.hostname.set(name) {
-            self.draw_network_section();
+            self.draw_header();
         }
     }
 
@@ -209,7 +209,7 @@ impl<'a> StatusDisplay<'a> {
         self.needs_full_redraw = false;
     }
 
-    /// Draw the "SENTINEL" header bar.
+    /// Draw the header bar with the device hostname (or "SENTINEL" as fallback).
     fn draw_header(&mut self) {
         let header_rect = Rectangle::new(Point::new(0, 0), Size::new(WIDTH as u32, 36));
         let _ = header_rect
@@ -217,7 +217,14 @@ impl<'a> StatusDisplay<'a> {
             .draw(&mut self.display);
 
         let style = MonoTextStyle::new(&FONT_10X20, TEXT_COLOR);
-        let _ = Text::new("SENTINEL", Point::new(100, 24), style).draw(&mut self.display);
+        let name = if self.hostname.as_str().is_empty() {
+            "SENTINEL"
+        } else {
+            self.hostname.as_str()
+        };
+        // Center horizontally: FONT_10X20 characters are 10px wide
+        let x = ((WIDTH as i32) - (name.len() as i32 * 10)) / 2;
+        let _ = Text::new(name, Point::new(x.max(4), 24), style).draw(&mut self.display);
     }
 
     /// Draw the network/connection status block (y: 50..160).

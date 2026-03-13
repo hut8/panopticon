@@ -143,7 +143,8 @@ fn main() -> Result<()> {
             ensure_connected(tcp_handle);
             last_reconnect_check = std::time::Instant::now();
 
-            // Update server connection indicator on the display
+            // Update connection indicators on the display
+            status_display.set_wifi_connected(wifi.is_connected().unwrap_or(false));
             let connected = tcp_handle
                 .lock()
                 .map(|g| g.is_some())
