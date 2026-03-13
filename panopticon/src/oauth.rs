@@ -159,11 +159,13 @@ async fn callback(State(state): State<AppState>, Query(params): Query<CallbackPa
 
     // Register webhook with U-Tec (after persisting, so we can always
     // validate notifications even if this call fails).
-    let webhook_url = format!("{}/api/webhooks/utec", *BASE_URL);
-    match client
-        .set_notification_url(&webhook_url, &notification_token)
-        .await
-    {
+    // Embed the notification token as a query parameter so U-Tec echoes
+    // it back on each callback — our handler validates it.
+    let webhook_url = format!(
+        "{}/api/webhooks/utec?access_token={}",
+        *BASE_URL, &notification_token
+    );
+    match client.set_notification_url(&webhook_url).await {
         Ok(()) => info!("Registered webhook URL with U-Tec"),
         Err(e) => error!("Failed to register webhook URL: {e}"),
     }
@@ -218,12 +220,12 @@ async fn logout(_user: AuthUser, State(state): State<AppState>) -> Response {
 }
 
 #[derive(Deserialize, Debug)]
-struct TokenResponse {
-    access_token: String,
+pub struct TokenResponse {
+    pub access_token: String,
     #[allow(dead_code)]
     token_type: String,
-    expires_in: Option<u64>,
-    refresh_token: Option<String>,
+    pub expires_in: Option<u64>,
+    pub refresh_token: Option<String>,
 }
 
 /// Exchange an authorization code for an access token.
@@ -271,6 +273,47 @@ async fn exchange_code(code: &str) -> anyhow::Result<TokenResponse> {
     }
 
     let token: TokenResponse = serde_json::from_str(&body)?;
+    Ok(token)
+}
+
+/// Refresh an expired access token using a refresh token.
+///
+/// Returns a new TokenResponse with a fresh access_token (and possibly
+/// a rotated refresh_token). Called automatically by AuthStore when the
+/// current access token has expired.
+pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<TokenResponse> {
+    let params = [
+        ("grant_type", "refresh_token"),
+        ("client_id", &*CLIENT_ID as &str),
+        ("client_secret", &*CLIENT_SECRET as &str),
+        ("refresh_token", refresh_token),
+    ];
+
+    tracing::info!("Refreshing access token via {}", TOKEN_URI);
+
+    let client = reqwest::Client::new();
+    let response = client.post(TOKEN_URI).form(&params).send().await?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    tracing::debug!("Token refresh response: {status} {body}");
+
+    if !status.is_success() {
+        anyhow::bail!("Token refresh returned {status}: {body}");
+    }
+
+    if let Ok(err) = serde_json::from_str::<serde_json::Value>(&body) {
+        if let Some(error) = err.get("error").and_then(|e| e.as_str()) {
+            let desc = err
+                .get("error_description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
+            anyhow::bail!("Token refresh error: {error}: {desc}");
+        }
+    }
+
+    let token: TokenResponse = serde_json::from_str(&body)?;
+    tracing::info!("Access token refreshed successfully");
     Ok(token)
 }
 

@@ -258,6 +258,9 @@ struct DevicesResponsePayload {
 }
 
 /// Notification webhook configuration for `Uhome.Configure/Set`.
+///
+/// Only `url` is sent in the payload — to authenticate incoming webhooks,
+/// embed a token as a query parameter in the URL itself.
 #[derive(Serialize, Debug)]
 struct ConfigurePayload {
     configure: ConfigureNotification,
@@ -270,7 +273,6 @@ struct ConfigureNotification {
 
 #[derive(Serialize, Debug)]
 struct NotificationConfig {
-    access_token: String,
     url: String,
 }
 
@@ -360,13 +362,13 @@ impl UTec {
 
     /// Register a webhook URL for device event notifications.
     ///
-    /// The `notification_token` is sent back by U-Tec with each notification
-    /// for authentication. Update it periodically for security.
-    pub async fn set_notification_url(&self, url: &str, notification_token: &str) -> Result<()> {
+    /// The URL should include any authentication token as a query parameter
+    /// (e.g., `https://example.com/api/webhooks/utec?access_token=TOKEN`)
+    /// since U-Tec will call the URL as-is.
+    pub async fn set_notification_url(&self, url: &str) -> Result<()> {
         let payload = ConfigurePayload {
             configure: ConfigureNotification {
                 notification: NotificationConfig {
-                    access_token: notification_token.to_string(),
                     url: url.to_string(),
                 },
             },
