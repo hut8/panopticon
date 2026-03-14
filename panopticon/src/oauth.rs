@@ -296,9 +296,9 @@ pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<TokenRe
 
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    tracing::debug!("Token refresh response: {status} {body}");
 
     if !status.is_success() {
+        // Safe to log error bodies — they don't contain tokens
         anyhow::bail!("Token refresh returned {status}: {body}");
     }
 
@@ -313,7 +313,11 @@ pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<TokenRe
     }
 
     let token: TokenResponse = serde_json::from_str(&body)?;
-    tracing::info!("Access token refreshed successfully");
+    tracing::info!(
+        expires_in = token.expires_in,
+        has_refresh_token = token.refresh_token.is_some(),
+        "Access token refreshed successfully"
+    );
     Ok(token)
 }
 

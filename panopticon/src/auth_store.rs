@@ -125,22 +125,35 @@ impl AuthStore {
 
     /// Attempt to refresh an expired access token.
     ///
-    /// Uses the stored refresh_token to obtain a new access_token from
-    /// U-Tec's OAuth2 token endpoint. On success, persists the new token
-    /// to disk and returns a fresh UTec client.
+    /// Acquires the write lock first and double-checks expiry to ensure
+    /// only one task performs the refresh (if U-Tec rotates refresh tokens,
+    /// concurrent refreshes with the same old token would race).
     async fn try_refresh(&self) -> Option<UTec> {
-        let refresh_token = {
-            let guard = self.inner.read().await;
-            guard.as_ref()?.refresh_token.clone()?
-        };
+        // Acquire write lock to serialize refresh attempts
+        let mut guard = self.inner.write().await;
+        let data = guard.as_mut()?;
 
+        // Double-check: another task may have refreshed while we waited
+        if let Some(expires_at) = data.expires_at {
+            if Utc::now() < expires_at {
+                return Some(UTec::new(data.access_token.clone()));
+            }
+        }
+
+        let refresh_token = data.refresh_token.clone()?;
         warn!("Access token expired, attempting refresh");
+
+        // Drop the lock during the network call to avoid blocking readers
+        // for the duration of the HTTP request. We'll re-acquire after.
+        drop(guard);
 
         match oauth::refresh_access_token(&refresh_token).await {
             Ok(token_response) => {
-                // 30-second grace period (matches Python reference implementation)
+                // 30-second grace period (matches Python reference implementation).
+                // Only apply when expires_in is large enough to avoid a refresh loop.
                 let expires_at = token_response.expires_in.map(|secs| {
-                    Utc::now() + chrono::Duration::seconds(secs.saturating_sub(30) as i64)
+                    let grace = if secs > 120 { 30 } else { 0 };
+                    Utc::now() + chrono::Duration::seconds((secs - grace) as i64)
                 });
 
                 let mut guard = self.inner.write().await;
