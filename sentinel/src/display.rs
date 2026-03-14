@@ -27,7 +27,7 @@ use mipidsi::options::{Orientation, Rotation};
 use mipidsi::Builder;
 
 /// SPI transfer buffer size in bytes. Larger = faster bulk draws.
-const SPI_BUFFER_SIZE: usize = 4096;
+pub const SPI_BUFFER_SIZE: usize = 4096;
 
 /// Colors used in the UI.
 const BG_COLOR: Rgb565 = Rgb565::BLACK;
@@ -78,14 +78,17 @@ mod heapless_string {
         }
 
         pub fn as_str(&self) -> &str {
-            // Safety: we only ever write valid UTF-8 via set()
-            unsafe { core::str::from_utf8_unchecked(&self.buf[..self.len]) }
+            core::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
         }
 
         pub fn set(&mut self, s: &str) -> bool {
             let changed = self.as_str() != s;
             if changed {
-                let copy_len = s.len().min(self.buf.len());
+                // Truncate on a char boundary to avoid splitting multi-byte UTF-8
+                let mut copy_len = s.len().min(self.buf.len());
+                while copy_len > 0 && !s.is_char_boundary(copy_len) {
+                    copy_len -= 1;
+                }
                 self.buf[..copy_len].copy_from_slice(&s.as_bytes()[..copy_len]);
                 self.len = copy_len;
             }

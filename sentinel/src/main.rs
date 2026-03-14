@@ -102,7 +102,7 @@ fn main() -> Result<()> {
 
     // ── Display ─────────────────────────────────────────────────────────
     info!("Initializing display...");
-    static mut SPI_BUF: [u8; 4096] = [0u8; 4096];
+    static mut SPI_BUF: [u8; display::SPI_BUFFER_SIZE] = [0u8; display::SPI_BUFFER_SIZE];
     // Safety: SPI_BUF is only used by StatusDisplay, which lives on the main
     // thread for the entire program lifetime. No concurrent access.
     let spi_buf = unsafe { &mut *core::ptr::addr_of_mut!(SPI_BUF) };
