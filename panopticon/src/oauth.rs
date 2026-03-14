@@ -296,6 +296,7 @@ pub async fn refresh_access_token(refresh_token: &str) -> anyhow::Result<TokenRe
 
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
+    tracing::debug!("Token refresh response: {status} {body}");
 
     if !status.is_success() {
         // Safe to log error bodies — they don't contain tokens
