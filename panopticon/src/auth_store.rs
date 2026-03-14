@@ -16,8 +16,9 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
+use crate::oauth;
 use crate::utec::UTec;
 
 /// Persisted auth state.
@@ -99,19 +100,91 @@ impl AuthStore {
     }
 
     /// Get a UTec client if we have a valid token, or None.
+    ///
+    /// If the access token is expired but a refresh token is available,
+    /// automatically attempts to refresh before returning None.
     pub async fn client(&self) -> Option<UTec> {
-        let guard = self.inner.read().await;
-        let data = guard.as_ref()?;
-
-        // Check expiry if we know it
-        if let Some(expires_at) = data.expires_at {
-            if Utc::now() >= expires_at {
-                warn!("Access token expired");
-                return None;
+        // Fast path: check with read lock
+        {
+            let guard = self.inner.read().await;
+            let data = guard.as_ref()?;
+            if let Some(expires_at) = data.expires_at {
+                if Utc::now() < expires_at {
+                    return Some(UTec::new(data.access_token.clone()));
+                }
+                // Expired — fall through to refresh
+            } else {
+                // No expiry info — assume valid
+                return Some(UTec::new(data.access_token.clone()));
             }
         }
 
-        Some(UTec::new(data.access_token.clone()))
+        // Token expired — try to refresh
+        self.try_refresh().await
+    }
+
+    /// Attempt to refresh an expired access token.
+    ///
+    /// Acquires the write lock first and double-checks expiry to ensure
+    /// only one task performs the refresh (if U-Tec rotates refresh tokens,
+    /// concurrent refreshes with the same old token would race).
+    async fn try_refresh(&self) -> Option<UTec> {
+        // Acquire write lock to serialize refresh attempts
+        let mut guard = self.inner.write().await;
+        let data = guard.as_mut()?;
+
+        // Double-check: another task may have refreshed while we waited
+        if let Some(expires_at) = data.expires_at {
+            if Utc::now() < expires_at {
+                return Some(UTec::new(data.access_token.clone()));
+            }
+        }
+
+        let refresh_token = data.refresh_token.clone()?;
+        warn!("Access token expired, attempting refresh");
+
+        // Drop the lock during the network call to avoid blocking readers
+        // for the duration of the HTTP request. We'll re-acquire after.
+        drop(guard);
+
+        match oauth::refresh_access_token(&refresh_token).await {
+            Ok(token_response) => {
+                // 30-second grace period (matches Python reference implementation).
+                // Only apply when expires_in is large enough to avoid a refresh loop.
+                let expires_at = token_response.expires_in.map(|secs| {
+                    let grace = if secs > 120 { 30 } else { 0 };
+                    Utc::now() + chrono::Duration::seconds((secs - grace) as i64)
+                });
+
+                let mut guard = self.inner.write().await;
+                if let Some(data) = guard.as_mut() {
+                    data.access_token = token_response.access_token.clone();
+                    // Use new refresh_token if provided, otherwise keep the old one
+                    if token_response.refresh_token.is_some() {
+                        data.refresh_token = token_response.refresh_token;
+                    }
+                    data.expires_at = expires_at;
+
+                    // Persist to disk
+                    let data_clone = data.clone();
+                    drop(guard);
+                    if let Err(e) = self.save(data_clone).await {
+                        error!("Failed to persist refreshed token: {e}");
+                    }
+
+                    // Re-read to get the saved data
+                    let guard = self.inner.read().await;
+                    let data = guard.as_ref()?;
+                    Some(UTec::new(data.access_token.clone()))
+                } else {
+                    None
+                }
+            }
+            Err(e) => {
+                error!("Token refresh failed: {e:#}");
+                None
+            }
+        }
     }
 
     /// Get the current auth data (if any).

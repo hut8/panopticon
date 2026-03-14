@@ -297,11 +297,18 @@ async fn publish_sentinel_discovery(client: &AsyncClient, config: &MqttConfig, d
     }
 }
 
-async fn publish_all_states(client: &AsyncClient, state: &AppState) {
+async fn publish_all_states(
+    client: &AsyncClient,
+    state: &AppState,
+    known_lock_ids: &mut Vec<String>,
+) {
     // Lock states
     if let Some(utec) = state.auth_store.client().await {
         match utec.discover_locks().await {
             Ok(locks) => {
+                // Update cached device IDs so we can publish "unknown" if auth expires
+                *known_lock_ids = locks.iter().map(|l| l.id.clone()).collect();
+
                 let lock_refs: Vec<&_> = locks.iter().collect();
                 match utec.query_devices(&lock_refs).await {
                     Ok(states) => {
@@ -345,6 +352,13 @@ async fn publish_all_states(client: &AsyncClient, state: &AppState) {
                 }
             }
             Err(e) => error!("MQTT: failed to discover locks for state publish: {e:#}"),
+        }
+    } else if !known_lock_ids.is_empty() {
+        // Auth unavailable — publish unknown state so HA doesn't show stale data.
+        // Any value not matching "LOCKED" or "UNLOCKED" triggers HA's "unknown" state.
+        warn!("MQTT: U-Tec auth unavailable, publishing unknown lock state");
+        for device_id in known_lock_ids.iter() {
+            publish(client, &lock_state_topic(device_id), "").await;
         }
     }
 
@@ -476,6 +490,9 @@ pub async fn spawn_mqtt_bridge(
 
     let (client, mut eventloop) = AsyncClient::new(opts, 64);
     let mut refresh_interval = tokio::time::interval(Duration::from_secs(300));
+    // Cache of known lock device IDs — used to publish "unknown" state when
+    // U-Tec auth is unavailable, so HA doesn't show stale lock state.
+    let mut known_lock_ids: Vec<String> = Vec::new();
 
     info!("MQTT bridge started");
 
@@ -509,7 +526,7 @@ pub async fn spawn_mqtt_bridge(
 
                         // Publish discovery configs and current state
                         publish_all_discovery(&client, &config, &state).await;
-                        publish_all_states(&client, &state).await;
+                        publish_all_states(&client, &state, &mut known_lock_ids).await;
                     }
                     Ok(Event::Incoming(Incoming::Publish(msg))) => {
                         handle_incoming_publish(&state, &msg).await;
@@ -539,7 +556,7 @@ pub async fn spawn_mqtt_bridge(
             }
 
             _ = refresh_interval.tick() => {
-                publish_all_states(&client, &state).await;
+                publish_all_states(&client, &state, &mut known_lock_ids).await;
             }
         }
     }
