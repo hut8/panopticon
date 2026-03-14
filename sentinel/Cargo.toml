@@ -9,6 +9,9 @@ esp-idf-svc = { version = "0.51", features = ["std"] }
 embedded-svc = "0.28"
 anyhow = "1"
 log = "0.4"
+mipidsi = "0.9"
+embedded-graphics = "0.8"
+embedded-hal = "1"
 
 [build-dependencies]
 embuild = "0.33"

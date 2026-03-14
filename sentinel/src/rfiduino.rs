@@ -20,7 +20,9 @@ pub type TagId = [u8; 5];
 /// Driver for the RFIDuino Shield v1.2, communicating with the EM4095 chip.
 pub struct RFIDuino<'a> {
     demod_out: PinDriver<'a, AnyInputPin, Input>,
+    #[allow(dead_code)]
     shd: PinDriver<'a, AnyOutputPin, Output>,
+    #[allow(dead_code)]
     mod_pin: PinDriver<'a, AnyOutputPin, Output>,
     _rdy_clk: PinDriver<'a, AnyInputPin, Input>,
     scan_buffer: TagId,
@@ -201,18 +203,21 @@ impl<'a> RFIDuino<'a> {
     }
 
     /// Reset the double-read verification state.
+    #[allow(dead_code)]
     pub fn reset_scan(&mut self) {
         self.read_count = 0;
         self.scan_buffer = [0u8; 5];
     }
 
     /// Shut down the EM4095 reader (low power mode).
+    #[allow(dead_code)]
     pub fn shutdown(&mut self) -> anyhow::Result<()> {
         self.shd.set_high()?;
         Ok(())
     }
 
     /// Wake the EM4095 reader from shutdown.
+    #[allow(dead_code)]
     pub fn wake(&mut self) -> anyhow::Result<()> {
         self.shd.set_low()?;
         Ok(())
@@ -234,6 +239,7 @@ pub fn format_tag_id_hex(tag: &TagId) -> String {
 
 /// Convert the 4 data bytes of a tag ID (bytes 1-4) to a u32.
 /// Byte 0 is the manufacturer/version byte and is excluded.
+#[allow(dead_code)]
 pub fn tag_id_to_u32(tag: &TagId) -> u32 {
     ((tag[1] as u32) << 24) | ((tag[2] as u32) << 16) | ((tag[3] as u32) << 8) | (tag[4] as u32)
 }

@@ -1,4 +1,5 @@
 mod buzzer;
+mod display;
 mod leds;
 mod logger;
 mod rfiduino;
@@ -99,8 +100,37 @@ fn main() -> Result<()> {
     )?;
     info!("LEDs initialized");
 
+    // ── Display ─────────────────────────────────────────────────────────
+    info!("Initializing display...");
+    static mut SPI_BUF: [u8; display::SPI_BUFFER_SIZE] = [0u8; display::SPI_BUFFER_SIZE];
+    // Safety: SPI_BUF is only used by StatusDisplay, which lives on the main
+    // thread for the entire program lifetime. No concurrent access.
+    let spi_buf = unsafe { &mut *core::ptr::addr_of_mut!(SPI_BUF) };
+    let mut status_display = display::StatusDisplay::new(
+        peripherals.spi2,
+        pins.gpio5,  // SCLK
+        pins.gpio23, // MOSI
+        pins.gpio26.into(), // CS
+        pins.gpio27.into(), // DC
+        pins.gpio25.into(), // RST
+        pins.gpio32.into(), // BL (backlight)
+        spi_buf,
+    )?;
+    status_display.set_hostname(SENTINEL_HOSTNAME);
+    status_display.set_ip(&format!("{}", ip_info.ip));
+    status_display.set_wifi_connected(true);
+    info!("Display initialized");
+
     // ── Connect to panopticon ─────────────────────────────────────────────
     connect_panopticon(tcp_handle);
+    // Update display with initial server connection status
+    {
+        let connected = tcp_handle
+            .lock()
+            .map(|g| g.is_some())
+            .unwrap_or(false);
+        status_display.set_server_connected(connected);
+    }
 
     // ── Main loop ──────────────────────────────────────────────────────────
     let mut last_scan: Option<(TagId, std::time::Instant)> = None;
@@ -112,6 +142,14 @@ fn main() -> Result<()> {
         if last_reconnect_check.elapsed() >= RECONNECT_INTERVAL {
             ensure_connected(tcp_handle);
             last_reconnect_check = std::time::Instant::now();
+
+            // Update connection indicators on the display
+            status_display.set_wifi_connected(wifi.is_connected().unwrap_or(false));
+            let connected = tcp_handle
+                .lock()
+                .map(|g| g.is_some())
+                .unwrap_or(false);
+            status_display.set_server_connected(connected);
         }
 
         if let Some(tag) = reader.scan_for_tag() {
@@ -127,13 +165,20 @@ fn main() -> Result<()> {
             if should_trigger {
                 let hex_id = format_tag_id_hex(&tag);
                 match send_scan(tcp_handle, &hex_id) {
-                    Some(action) if action == "granted" || action == "enrolled" => {
+                    Some(ref action) if action == "granted" || action == "enrolled" => {
+                        status_display.set_last_scan(&hex_id, action);
                         leds.flash_green(500);
                     }
-                    Some(action) if action == "denied" => {
+                    Some(ref action) if action == "denied" => {
+                        status_display.set_last_scan(&hex_id, action);
                         leds.flash_red(500);
                     }
-                    _ => {} // No response or unrecognized action — no LED feedback
+                    Some(ref action) => {
+                        status_display.set_last_scan(&hex_id, action);
+                    }
+                    None => {
+                        status_display.set_last_scan(&hex_id, "no response");
+                    }
                 }
                 last_scan = Some((tag, std::time::Instant::now()));
             }
