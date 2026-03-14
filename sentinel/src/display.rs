@@ -58,7 +58,6 @@ pub struct StatusDisplay<'a> {
     last_tag: heapless_string::HString,
     last_result: heapless_string::HString,
     scan_count: u32,
-    needs_full_redraw: bool,
 }
 
 /// Tiny fixed-capacity string to avoid heap allocation for cached display strings.
@@ -151,7 +150,6 @@ impl<'a> StatusDisplay<'a> {
             last_tag: heapless_string::HString::new(),
             last_result: heapless_string::HString::new(),
             scan_count: 0,
-            needs_full_redraw: true,
         };
 
         s.draw_full();
@@ -209,7 +207,6 @@ impl<'a> StatusDisplay<'a> {
         self.draw_header();
         self.draw_network_section();
         self.draw_scan_section();
-        self.needs_full_redraw = false;
     }
 
     /// Draw the header bar with the device hostname (or "SENTINEL" as fallback).
@@ -230,10 +227,11 @@ impl<'a> StatusDisplay<'a> {
         let _ = Text::new(name, Point::new(x.max(4), 24), style).draw(&mut self.display);
     }
 
-    /// Draw the network/connection status block (y: 50..160).
+    /// Draw the network/connection status block (y: 46..176).
     fn draw_network_section(&mut self) {
-        // Clear section background
-        let section = Rectangle::new(Point::new(0, 46), Size::new(WIDTH as u32, 120));
+        // Clear section background (must cover full glyph height of the
+        // lowest text, which uses FONT_10X20 at baseline y=166).
+        let section = Rectangle::new(Point::new(0, 46), Size::new(WIDTH as u32, 130));
         let _ = section
             .into_styled(PrimitiveStyle::with_fill(BG_COLOR))
             .draw(&mut self.display);
@@ -309,12 +307,13 @@ impl<'a> StatusDisplay<'a> {
             let _ = Text::new(result_str, Point::new(10, 268), rs).draw(&mut self.display);
         }
 
-        // Scan count
-        let _ = Text::new("TOTAL SCANS", Point::new(10, 296), label_style)
+        // Scan count (keep value baseline at y=306 so the 20px-tall glyph
+        // doesn't extend past the 320px display height)
+        let _ = Text::new("TOTAL SCANS", Point::new(10, 290), label_style)
             .draw(&mut self.display);
         let mut count_buf = [0u8; 16];
         let count_str = format_u32(self.scan_count, &mut count_buf);
-        let _ = Text::new(count_str, Point::new(10, 316), value_style).draw(&mut self.display);
+        let _ = Text::new(count_str, Point::new(10, 306), value_style).draw(&mut self.display);
     }
 }
 

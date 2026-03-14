@@ -18,10 +18,11 @@ const TIMEOUT: u16 = 1000;
 pub type TagId = [u8; 5];
 
 /// Driver for the RFIDuino Shield v1.2, communicating with the EM4095 chip.
-#[allow(dead_code)]
 pub struct RFIDuino<'a> {
     demod_out: PinDriver<'a, AnyInputPin, Input>,
+    #[allow(dead_code)]
     shd: PinDriver<'a, AnyOutputPin, Output>,
+    #[allow(dead_code)]
     mod_pin: PinDriver<'a, AnyOutputPin, Output>,
     _rdy_clk: PinDriver<'a, AnyInputPin, Input>,
     scan_buffer: TagId,
