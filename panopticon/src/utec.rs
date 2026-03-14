@@ -167,10 +167,17 @@ struct DeviceUsersResponsePayload {
 }
 
 /// A device with its current states, as returned by Query/Command responses.
+///
+/// When a device-level error occurs (e.g., device offline), the API returns
+/// an `error` object instead of `states`. Both fields are optional in the
+/// wire format so we can handle either case.
 #[derive(Deserialize, Debug, Clone)]
 pub struct DeviceWithStates {
     pub id: String,
+    #[serde(default)]
     pub states: Vec<DeviceState>,
+    /// Per-device error returned by the API (e.g., DEVICE_OFFLINE).
+    pub error: Option<ApiError>,
 }
 
 impl DeviceWithStates {
@@ -449,6 +456,15 @@ impl UTec {
                 },
             )
             .await?;
+
+        // Check for per-device errors (e.g., DEVICE_OFFLINE) — the API
+        // returns these inside 200 OK responses with no `states` array.
+        for dev in &payload.devices {
+            if let Some(err) = &dev.error {
+                return Err(err.clone().into());
+            }
+        }
+
         Ok(payload.devices)
     }
 
