@@ -182,10 +182,12 @@ pub struct DeviceWithStates {
 
 impl DeviceWithStates {
     /// Return an error if this device carries a per-device API error
-    /// (e.g., `DEVICE_OFFLINE`). Includes the device ID for context.
-    pub fn check_error(&self) -> Result<()> {
+    /// (e.g., `DEVICE_OFFLINE`). Wraps the original `ApiError` with
+    /// device ID context so the typed error is preserved as the source.
+    fn check_error(&self) -> Result<()> {
         if let Some(err) = &self.error {
-            bail!("device {}: {}", self.id, err);
+            return Err(anyhow::Error::new(err.clone())
+                .context(format!("device {} returned an error", self.id)));
         }
         Ok(())
     }
@@ -439,11 +441,6 @@ impl UTec {
         let payload: DevicesResponsePayload = self
             .request("Uhome.Device", "Query", QueryPayload { devices: refs })
             .await?;
-
-        for dev in &payload.devices {
-            dev.check_error()?;
-        }
-
         Ok(payload.devices)
     }
 
