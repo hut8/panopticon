@@ -181,6 +181,15 @@ pub struct DeviceWithStates {
 }
 
 impl DeviceWithStates {
+    /// Return an error if this device carries a per-device API error
+    /// (e.g., `DEVICE_OFFLINE`). Includes the device ID for context.
+    pub fn check_error(&self) -> Result<()> {
+        if let Some(err) = &self.error {
+            bail!("device {}: {}", self.id, err);
+        }
+        Ok(())
+    }
+
     /// Find a state by capability and name.
     pub fn get_state(&self, capability: &str, name: &str) -> Option<&DeviceState> {
         self.states
@@ -430,6 +439,11 @@ impl UTec {
         let payload: DevicesResponsePayload = self
             .request("Uhome.Device", "Query", QueryPayload { devices: refs })
             .await?;
+
+        for dev in &payload.devices {
+            dev.check_error()?;
+        }
+
         Ok(payload.devices)
     }
 
@@ -460,9 +474,7 @@ impl UTec {
         // Check for per-device errors (e.g., DEVICE_OFFLINE) — the API
         // returns these inside 200 OK responses with no `states` array.
         for dev in &payload.devices {
-            if let Some(err) = &dev.error {
-                return Err(err.clone().into());
-            }
+            dev.check_error()?;
         }
 
         Ok(payload.devices)
